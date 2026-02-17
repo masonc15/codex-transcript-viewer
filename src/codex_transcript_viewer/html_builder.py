@@ -1,0 +1,159 @@
+"""Build a self-contained HTML viewer from parsed Codex session events."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from importlib import resources
+
+from .formatting import format_ts, format_ts_full
+from .markdown import escape, render_markdown
+
+
+def _load_asset(name: str) -> str:
+    """Load a bundled CSS or JS asset from the package."""
+    return resources.files(__package__).joinpath(name).read_text(encoding="utf-8")
+
+
+def build_html(meta: dict | None, events: list[dict]) -> str:
+    """Build a self-contained HTML string from session metadata and events."""
+    session_id = meta.get("id", "unknown") if meta else "unknown"
+    model = meta.get("model_provider", "") if meta else ""
+    cli_version = meta.get("cli_version", "") if meta else ""
+    cwd = meta.get("cwd", "") if meta else ""
+    branch = meta.get("git", {}).get("branch", "") if meta else ""
+    commit = (meta.get("git", {}).get("commit_hash", "") or "")[:12] if meta else ""
+    session_ts = meta.get("timestamp", "") if meta else ""
+
+    sidebar_items: list[str] = []
+    message_blocks: list[str] = []
+    msg_idx = 0
+
+    for evt in events:
+        etype = evt["type"]
+        ts = format_ts(evt["ts"])
+        msg_idx += 1
+        anchor = f"msg-{msg_idx}"
+
+        handler = _EVENT_HANDLERS.get(etype)
+        if handler:
+            handler(evt, ts, anchor, sidebar_items, message_blocks)
+
+    css = _load_asset("style.css")
+
+    sidebar_html = "\n".join(sidebar_items)
+    messages_html = "\n".join(message_blocks)
+    generated = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    return _HTML_TEMPLATE.format(
+        title=escape(session_id[:12]),
+        css=css,
+        sidebar_html=sidebar_html,
+        messages_html=messages_html,
+        session_id_short=escape(session_id[:12]),
+        session_ts_short=escape(format_ts_full(session_ts)),
+        session_id=escape(session_id),
+        session_ts=escape(format_ts_full(session_ts)),
+        model=escape(model),
+        cli_version=escape(cli_version),
+        cwd=escape(cwd),
+        git_info=escape(branch) + ((" @ " + escape(commit)) if commit else ""),
+        generated=generated,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Per-event-type rendering functions
+# ---------------------------------------------------------------------------
+
+def _render_user_message(evt, ts, anchor, sidebar, messages):
+    text_preview = evt["text"][:80].replace("\n", " ")
+    sidebar.append(
+        f'<a class="tree-node tree-role-user" href="#{anchor}">'
+        f'<span class="tree-ts">{ts}</span> '
+        f'<span class="tree-content">\U0001f464 {escape(text_preview)}</span></a>'
+    )
+    messages.append(
+        f'<div class="user-message" id="{anchor}">'
+        f'<div class="message-timestamp">{ts}</div>'
+        f'<div class="markdown-content">{render_markdown(evt["text"])}</div>'
+        f"</div>"
+    )
+
+
+def _render_agent_commentary(evt, ts, anchor, sidebar, messages):
+    sidebar.append(
+        f'<a class="tree-node tree-role-assistant" href="#{anchor}">'
+        f'<span class="tree-ts">{ts}</span> '
+        f'<span class="tree-content">\U0001f4ac {escape(evt["text"][:60])}</span></a>'
+    )
+    messages.append(
+        f'<div class="commentary-message" id="{anchor}">'
+        f'<div class="message-timestamp">{ts}</div>'
+        f'<div class="markdown-content">{render_markdown(evt["text"])}</div>'
+        f"</div>"
+    )
+
+
+def _render_assistant_text(evt, ts, anchor, sidebar, messages):
+    phase_label = f' ({evt["phase"]})' if evt.get("phase") else ""
+    preview = evt["text"][:60].replace("\n", " ")
+    sidebar.append(
+        f'<a class="tree-node tree-role-assistant" href="#{anchor}">'
+        f'<span class="tree-ts">{ts}</span> '
+        f'<span class="tree-content">\U0001f916 {escape(preview)}</span></a>'
+    )
+    messages.append(
+        f'<div class="assistant-message" id="{anchor}">'
+        f'<div class="message-timestamp">{ts}{escape(phase_label)}</div>'
+        f'<div class="assistant-text markdown-content">{render_markdown(evt["text"])}</div>'
+        f"</div>"
+    )
+
+
+_EVENT_HANDLERS = {
+    "user_message": _render_user_message,
+    "agent_commentary": _render_agent_commentary,
+    "assistant_text": _render_assistant_text,
+}
+
+
+# ---------------------------------------------------------------------------
+# HTML shell template
+# ---------------------------------------------------------------------------
+
+_HTML_TEMPLATE = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Codex CLI Session \u2014 {title}</title>
+  <style>{css}</style>
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <h2>CODEX CLI SESSION</h2>
+        <div class="sidebar-meta">{session_id_short} \u00b7 {session_ts_short}</div>
+      </div>
+      <div class="tree-container" id="tree-container">{sidebar_html}</div>
+    </aside>
+    <main id="content">
+      <div class="header">
+        <h1><span class="codex-logo">CODEX</span> Session Transcript</h1>
+        <div class="header-info">
+          <div class="info-item"><span class="info-label">Session ID</span><span class="info-value">{session_id}</span></div>
+          <div class="info-item"><span class="info-label">Timestamp</span><span class="info-value">{session_ts}</span></div>
+          <div class="info-item"><span class="info-label">Model</span><span class="info-value">{model}</span></div>
+          <div class="info-item"><span class="info-label">CLI Version</span><span class="info-value">{cli_version}</span></div>
+          <div class="info-item"><span class="info-label">Working Dir</span><span class="info-value">{cwd}</span></div>
+          <div class="info-item"><span class="info-label">Git Branch</span><span class="info-value">{git_info}</span></div>
+        </div>
+      </div>
+      <div id="messages">{messages_html}</div>
+      <div class="footer">Codex CLI session transcript \u00b7 Generated {generated}</div>
+    </main>
+  </div>
+</body>
+</html>"""
