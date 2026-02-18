@@ -84,6 +84,15 @@ def _handle_event_msg(
                 "text": payload.get("text", ""),
             }
         )
+    elif msg_type == "task_complete":
+        events.append(
+            {
+                "type": "task_complete",
+                "ts": ts,
+                "text": payload.get("last_agent_message", ""),
+                "turn_id": payload.get("turn_id", ""),
+            }
+        )
 
 
 def _handle_response_item(

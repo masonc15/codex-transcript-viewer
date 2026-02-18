@@ -184,6 +184,21 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages):
     )
 
 
+def _render_task_complete(evt, ts, anchor, sidebar, messages):
+    preview = evt["text"][:60].replace("\n", " ")
+    sidebar.append(
+        f'<a class="tree-node tree-role-assistant" href="#{anchor}">'
+        f'<span class="tree-ts">{ts}</span> '
+        f'<span class="tree-content">\u2705 {escape(preview)}</span></a>'
+    )
+    messages.append(
+        f'<div class="assistant-message final-answer" id="{anchor}">'
+        f'<div class="message-timestamp">{ts} \u2014 final answer</div>'
+        f'<div class="assistant-text markdown-content">{render_markdown(evt["text"])}</div>'
+        f"</div>"
+    )
+
+
 _EVENT_HANDLERS = {
     "user_message": _render_user_message,
     "reasoning": _render_reasoning,
@@ -191,6 +206,7 @@ _EVENT_HANDLERS = {
     "assistant_text": _render_assistant_text,
     "tool_call": _render_tool_call,
     "tool_output": _render_tool_output,
+    "task_complete": _render_task_complete,
 }
 
 
