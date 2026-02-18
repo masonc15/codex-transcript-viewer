@@ -76,6 +76,14 @@ def _handle_event_msg(
                 "text": payload.get("message", ""),
             }
         )
+    elif msg_type == "agent_reasoning":
+        events.append(
+            {
+                "type": "reasoning",
+                "ts": ts,
+                "text": payload.get("text", ""),
+            }
+        )
 
 
 def _handle_response_item(
@@ -95,5 +103,16 @@ def _handle_response_item(
                         "ts": ts,
                         "text": block.get("text", ""),
                         "phase": phase,
+                    }
+                )
+    elif item_type == "reasoning":
+        summary = payload.get("summary", [])
+        for s in summary:
+            if s.get("type") == "summary_text":
+                events.append(
+                    {
+                        "type": "reasoning",
+                        "ts": ts,
+                        "text": s.get("text", ""),
                     }
                 )

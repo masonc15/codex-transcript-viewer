@@ -108,6 +108,7 @@ body {
 .tree-content { overflow: hidden; text-overflow: ellipsis; }
 .tree-role-user .tree-content { color: var(--accent); }
 .tree-role-assistant .tree-content { color: var(--success); }
+.tree-role-thinking .tree-content { color: var(--thinkingText); }
 
 /* Main content */
 #content {
@@ -212,6 +213,16 @@ body {
   border-radius: 4px;
   color: var(--commentaryText);
   font-style: italic;
+}
+
+.thinking-block {
+  padding: 8px var(--line-height);
+  color: var(--thinkingText);
+  font-style: italic;
+}
+
+.thinking-text {
+  white-space: pre-wrap;
 }
 
 /* Markdown */
