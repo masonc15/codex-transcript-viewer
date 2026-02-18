@@ -76,6 +76,44 @@ body {
   color: var(--dim);
 }
 
+.sidebar-search {
+  width: 100%;
+  padding: 4px 8px;
+  margin-top: 8px;
+  font-size: 11px;
+  font-family: inherit;
+  background: var(--body-bg);
+  color: var(--text);
+  border: 1px solid var(--dim);
+  border-radius: 3px;
+}
+
+.sidebar-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.sidebar-filters {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.filter-btn {
+  padding: 2px 6px;
+  font-size: 10px;
+  font-family: inherit;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--dim);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.filter-btn:hover { color: var(--text); border-color: var(--text); }
+.filter-btn.active { background: var(--accent); color: var(--body-bg); border-color: var(--accent); }
+
 .tree-container {
   flex: 1;
   overflow-y: auto;

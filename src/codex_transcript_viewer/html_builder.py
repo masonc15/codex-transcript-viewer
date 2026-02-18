@@ -40,6 +40,7 @@ def build_html(meta: dict | None, events: list[dict]) -> str:
             handler(evt, ts, anchor, sidebar_items, message_blocks)
 
     css = _load_asset("style.css")
+    js = _load_asset("viewer.js")
 
     sidebar_html = "\n".join(sidebar_items)
     messages_html = "\n".join(message_blocks)
@@ -48,6 +49,7 @@ def build_html(meta: dict | None, events: list[dict]) -> str:
     return _HTML_TEMPLATE.format(
         title=escape(session_id[:12]),
         css=css,
+        js=js,
         sidebar_html=sidebar_html,
         messages_html=messages_html,
         session_id_short=escape(session_id[:12]),
@@ -299,6 +301,14 @@ _HTML_TEMPLATE = """\
       <div class="sidebar-header">
         <h2>CODEX CLI SESSION</h2>
         <div class="sidebar-meta">{session_id_short} \u00b7 {session_ts_short}</div>
+        <input type="text" class="sidebar-search" id="tree-search" placeholder="Filter entries..." oninput="filterTree(this.value)">
+        <div class="sidebar-filters">
+          <button class="filter-btn active" data-filter="default" onclick="setFilter('default', this)">Default</button>
+          <button class="filter-btn" data-filter="no-tools" onclick="setFilter('no-tools', this)">No tools</button>
+          <button class="filter-btn" data-filter="user-only" onclick="setFilter('user-only', this)">User</button>
+          <button class="filter-btn" data-filter="answers" onclick="setFilter('answers', this)">Answers</button>
+          <button class="filter-btn" data-filter="all" onclick="setFilter('all', this)">All</button>
+        </div>
       </div>
       <div class="tree-container" id="tree-container">{sidebar_html}</div>
     </aside>
@@ -318,5 +328,6 @@ _HTML_TEMPLATE = """\
       <div class="footer">Codex CLI session transcript \u00b7 Generated {generated}</div>
     </main>
   </div>
+  <script>{js}</script>
 </body>
 </html>"""
