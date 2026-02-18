@@ -92,7 +92,26 @@ def _handle_response_item(
     item_type = payload.get("type", "")
     role = payload.get("role", "")
 
-    if item_type == "message" and role == "assistant":
+    if item_type == "function_call":
+        events.append(
+            {
+                "type": "tool_call",
+                "ts": ts,
+                "name": payload.get("name", ""),
+                "arguments": payload.get("arguments", ""),
+                "call_id": payload.get("call_id", ""),
+            }
+        )
+    elif item_type == "function_call_output":
+        events.append(
+            {
+                "type": "tool_output",
+                "ts": ts,
+                "call_id": payload.get("call_id", ""),
+                "output": payload.get("output", ""),
+            }
+        )
+    elif item_type == "message" and role == "assistant":
         content = payload.get("content", [])
         phase = payload.get("phase", "")
         for block in content:

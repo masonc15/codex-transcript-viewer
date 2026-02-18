@@ -108,6 +108,7 @@ body {
 .tree-content { overflow: hidden; text-overflow: ellipsis; }
 .tree-role-user .tree-content { color: var(--accent); }
 .tree-role-assistant .tree-content { color: var(--success); }
+.tree-role-tool .tree-content { color: var(--muted); }
 .tree-role-thinking .tree-content { color: var(--thinkingText); }
 
 /* Main content */
@@ -223,6 +224,47 @@ body {
 
 .thinking-text {
   white-space: pre-wrap;
+}
+
+/* Tool execution */
+.tool-execution {
+  padding: var(--line-height);
+  border-radius: 4px;
+}
+
+.tool-execution.pending { background: var(--toolPendingBg); }
+.tool-execution.success { background: var(--toolSuccessBg); }
+
+.tool-header { font-weight: bold; margin-bottom: 4px; }
+.tool-name { color: var(--accent); }
+
+.tool-command {
+  font-weight: bold;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--success);
+}
+
+.tool-args pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: inherit;
+  color: var(--text);
+}
+
+.tool-output {
+  color: var(--toolOutput);
+  font-family: inherit;
+  overflow-x: auto;
+}
+
+.tool-output pre {
+  margin: 0;
+  padding: 0;
+  font-family: inherit;
+  color: inherit;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
 /* Markdown */
