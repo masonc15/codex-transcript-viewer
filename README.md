@@ -1,6 +1,6 @@
 # codex-transcript-viewer
 
-Converts Codex CLI JSONL session transcripts into self-contained HTML files you can open in any browser. The output is a single `.html` file with no external dependencies -- sidebar navigation, search, filtering, and all styling are baked in.
+Converts Codex CLI JSONL session transcripts into single-file HTML viewers with sidebar navigation, search, and filtering. No external dependencies. Just open the `.html` in any browser.
 
 ## Install
 
