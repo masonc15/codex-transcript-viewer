@@ -199,6 +199,50 @@ def _render_task_complete(evt, ts, anchor, sidebar, messages):
     )
 
 
+def _render_task_started(evt, ts, anchor, sidebar, messages):
+    sidebar.append(
+        f'<a class="tree-node tree-role-system" href="#{anchor}">'
+        f'<span class="tree-ts">{ts}</span> '
+        f'<span class="tree-content">\u25b6 Turn started</span></a>'
+    )
+    messages.append(
+        f'<div class="system-event" id="{anchor}">'
+        f'<div class="message-timestamp">{ts}</div>'
+        f'<span class="event-label">\u25b6 Turn started</span>'
+        f"</div>"
+    )
+
+
+def _render_turn_aborted(evt, ts, anchor, sidebar, messages):
+    reason = escape(evt["reason"])
+    sidebar.append(
+        f'<a class="tree-node tree-role-error" href="#{anchor}">'
+        f'<span class="tree-ts">{ts}</span> '
+        f'<span class="tree-content">\u26d4 Turn aborted: {reason}</span></a>'
+    )
+    messages.append(
+        f'<div class="system-event error-event" id="{anchor}">'
+        f'<div class="message-timestamp">{ts}</div>'
+        f'<span class="event-label error-text">\u26d4 Turn aborted: {reason}</span>'
+        f"</div>"
+    )
+
+
+def _render_thread_rolled_back(evt, ts, anchor, sidebar, messages):
+    n = evt["num_turns"]
+    sidebar.append(
+        f'<a class="tree-node tree-role-system" href="#{anchor}">'
+        f'<span class="tree-ts">{ts}</span> '
+        f'<span class="tree-content">\u21a9 Rolled back {n} turn(s)</span></a>'
+    )
+    messages.append(
+        f'<div class="system-event" id="{anchor}">'
+        f'<div class="message-timestamp">{ts}</div>'
+        f'<span class="event-label">\u21a9 Rolled back {n} turn(s)</span>'
+        f"</div>"
+    )
+
+
 _EVENT_HANDLERS = {
     "user_message": _render_user_message,
     "reasoning": _render_reasoning,
@@ -207,6 +251,9 @@ _EVENT_HANDLERS = {
     "tool_call": _render_tool_call,
     "tool_output": _render_tool_output,
     "task_complete": _render_task_complete,
+    "task_started": _render_task_started,
+    "turn_aborted": _render_turn_aborted,
+    "thread_rolled_back": _render_thread_rolled_back,
 }
 
 

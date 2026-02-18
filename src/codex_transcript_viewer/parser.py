@@ -93,6 +93,31 @@ def _handle_event_msg(
                 "turn_id": payload.get("turn_id", ""),
             }
         )
+    elif msg_type == "task_started":
+        events.append(
+            {
+                "type": "task_started",
+                "ts": ts,
+                "turn_id": payload.get("turn_id", ""),
+                "model_context_window": payload.get("model_context_window", ""),
+            }
+        )
+    elif msg_type == "turn_aborted":
+        events.append(
+            {
+                "type": "turn_aborted",
+                "ts": ts,
+                "reason": payload.get("reason", ""),
+            }
+        )
+    elif msg_type == "thread_rolled_back":
+        events.append(
+            {
+                "type": "thread_rolled_back",
+                "ts": ts,
+                "num_turns": payload.get("num_turns", 0),
+            }
+        )
 
 
 def _handle_response_item(

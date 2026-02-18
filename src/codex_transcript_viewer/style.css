@@ -110,6 +110,8 @@ body {
 .tree-role-assistant .tree-content { color: var(--success); }
 .tree-role-tool .tree-content { color: var(--muted); }
 .tree-role-thinking .tree-content { color: var(--thinkingText); }
+.tree-role-system .tree-content { color: var(--dim); }
+.tree-role-error .tree-content { color: var(--error); }
 
 /* Main content */
 #content {
@@ -279,6 +281,20 @@ body {
 .tool-output.expandable.expanded .output-full { display: block; }
 
 .expand-hint { color: var(--warning); font-style: italic; }
+
+/* System events */
+.system-event {
+  padding: 4px var(--line-height);
+  font-size: 11px;
+}
+
+.event-label {
+  color: var(--dim);
+}
+
+.error-text {
+  color: var(--error);
+}
 
 /* Markdown */
 .markdown-content {
