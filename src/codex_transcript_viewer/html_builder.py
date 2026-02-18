@@ -296,6 +296,8 @@ _HTML_TEMPLATE = """\
   <style>{css}</style>
 </head>
 <body>
+  <button id="hamburger" onclick="document.getElementById('sidebar').classList.toggle('open'); document.getElementById('sidebar-overlay').classList.toggle('open')">\u2630</button>
+  <div id="sidebar-overlay" onclick="document.getElementById('sidebar').classList.remove('open'); this.classList.remove('open')"></div>
   <div id="app">
     <aside id="sidebar">
       <div class="sidebar-header">
