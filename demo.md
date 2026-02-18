@@ -1,8 +1,5 @@
 # codex-transcript-viewer Demo
 
-*2026-02-18T21:22:53Z by Showboat 0.6.0*
-<!-- showboat-id: 17a73c64-d744-4594-8cfe-7a9a1078e72c -->
-
 codex-transcript-viewer converts Codex CLI JSONL session transcripts into self-contained HTML files you can browse in any browser. The output has a sidebar with navigation, search, and filtering alongside a main content pane that renders every event type with distinct visual treatment. No external dependencies — the entire viewer is a single .html file.
 
 ```bash
@@ -60,19 +57,11 @@ Events: 192
 
 The viewer has two panels. On the left is a sticky sidebar with the session ID, a text search box, filter buttons (Default, No tools, User, Answers, All), and a scrollable event tree. On the right is the main content area where each event is rendered with its own visual style.
 
-```bash {image}
-![Full viewer showing sidebar navigation and session header with metadata](screenshot-overview.png)
-```
-
 ![Full viewer showing sidebar navigation and session header with metadata](0236fc18-2026-02-18.png)
 
 ## Tool Call Rendering
 
 Tool calls (exec_command, file reads, etc.) show the command or function name as a header with the arguments displayed in monospace. Token usage counters appear inline. Commentary messages from the agent are rendered in italic with a muted border.
-
-```bash {image}
-![Tool calls showing exec_command with sed and rg, plus commentary and token counts](screenshot-tool-calls.png)
-```
 
 ![Tool calls showing exec_command with sed and rg, plus commentary and token counts](8786e0f5-2026-02-18.png)
 
@@ -80,41 +69,21 @@ Tool calls (exec_command, file reads, etc.) show the command or function name as
 
 Final answers are highlighted with a green-tinted background and a "final answer" label. Markdown in the response is rendered — bullet lists, inline code references, and paragraph breaks all come through cleanly.
 
-```bash {image}
-![Final answer with rendered markdown, bullet lists, and inline code references](screenshot-final-answer.png)
-```
-
 ![Final answer with rendered markdown, bullet lists, and inline code references](b5730c17-2026-02-18.png)
 
 ## Sidebar Filters
 
 Five preset filters let you cut through long sessions quickly. "Default" hides low-signal system events. "No tools" strips out tool calls and their output so you see only the conversation. "User" shows your messages. "Answers" shows user messages plus final answers with checkmarks. "All" shows everything including turn-started, rolled-back, and token events.
 
-```bash {image}
-![User filter active — sidebar shows only user messages with person icons](screenshot-user-filter.png)
-```
-
 ![User filter active — sidebar shows only user messages with person icons](fbdb3dfa-2026-02-18.png)
 
-```bash {image}
-![Answers filter showing user messages and final answers with green checkmarks](screenshot-answers-filter.png)
-```
-
 ![Answers filter showing user messages and final answers with green checkmarks](ee55a207-2026-02-18.png)
-
-```bash {image}
-![No tools filter hiding tool calls to show only conversation flow](screenshot-no-tools-filter.png)
-```
 
 ![No tools filter hiding tool calls to show only conversation flow](beb7542c-2026-02-18.png)
 
 ## Search
 
 The search box at the top of the sidebar does live text filtering across all event labels. Type a keyword and the sidebar instantly narrows to matching entries.
-
-```bash {image}
-![Search for "textual" filtering sidebar to only matching events](screenshot-search.png)
-```
 
 ![Search for "textual" filtering sidebar to only matching events](8bdcc74d-2026-02-18.png)
 
