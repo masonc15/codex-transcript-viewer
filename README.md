@@ -44,6 +44,10 @@ The HTML output has a sticky sidebar on the left with a scrollable event tree an
 
 The sidebar supports text search and preset filters (Default, No tools, User only, Answers, All). On mobile the sidebar collapses behind a hamburger menu.
 
+## Credits
+
+Inspired by the HTML session export in [pi](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent), a coding agent by [@badlogic](https://github.com/badlogic).
+
 ## Project structure
 
 ```
