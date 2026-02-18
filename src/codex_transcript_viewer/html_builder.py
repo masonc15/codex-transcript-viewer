@@ -159,6 +159,8 @@ def _render_tool_call(evt, ts, anchor, sidebar, messages):
 
 def _render_tool_output(evt, ts, anchor, sidebar, messages):
     output = evt["output"]
+    truncated = len(output) > 2000
+    preview = output[:2000]
 
     sidebar.append(
         f'<a class="tree-node tree-role-tool" href="#{anchor}">'
@@ -166,10 +168,19 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages):
         f'<span class="tree-content">\U0001f4e4 output ({len(output)} chars)</span></a>'
     )
 
+    expandable_class = " expandable" if truncated else ""
+    expand_hint = (
+        f'\n<span class="expand-hint">[click to expand {len(output)} chars]</span>'
+        if truncated
+        else ""
+    )
+
     messages.append(
         f'<div class="tool-execution success" id="{anchor}">'
-        f'<div class="tool-output"><pre>{escape(output)}</pre></div>'
-        f"</div>"
+        f'<div class="tool-output{expandable_class}" onclick="this.classList.toggle(\'expanded\')">'
+        f'<div class="output-preview"><pre>{escape(preview)}{expand_hint}</pre></div>'
+        f'<div class="output-full"><pre>{escape(output)}</pre></div>'
+        f"</div></div>"
     )
 
 
