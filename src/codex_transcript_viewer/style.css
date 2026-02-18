@@ -469,3 +469,8 @@ body {
   #content { padding: var(--line-height) 16px; }
   #content > * { max-width: 100%; }
 }
+
+@media print {
+  #sidebar, #hamburger { display: none !important; }
+  body { background: white; color: black; }
+}
