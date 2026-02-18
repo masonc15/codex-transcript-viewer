@@ -57,35 +57,35 @@ Events: 192
 
 The viewer has two panels. On the left is a sticky sidebar with the session ID, a text search box, filter buttons (Default, No tools, User, Answers, All), and a scrollable event tree. On the right is the main content area where each event is rendered with its own visual style.
 
-![Full viewer showing sidebar navigation and session header with metadata](0236fc18-2026-02-18.png)
+![Full viewer showing sidebar navigation and session header with metadata](images/overview.png)
 
 ## Tool Call Rendering
 
 Tool calls (exec_command, file reads, etc.) show the command or function name as a header with the arguments displayed in monospace. Token usage counters appear inline. Commentary messages from the agent are rendered in italic with a muted border.
 
-![Tool calls showing exec_command with sed and rg, plus commentary and token counts](8786e0f5-2026-02-18.png)
+![Tool calls showing exec_command with sed and rg, plus commentary and token counts](images/tool-calls.png)
 
 ## Final Answers
 
 Final answers are highlighted with a green-tinted background and a "final answer" label. Markdown in the response is rendered — bullet lists, inline code references, and paragraph breaks all come through cleanly.
 
-![Final answer with rendered markdown, bullet lists, and inline code references](b5730c17-2026-02-18.png)
+![Final answer with rendered markdown, bullet lists, and inline code references](images/final-answer.png)
 
 ## Sidebar Filters
 
 Five preset filters let you cut through long sessions quickly. "Default" hides low-signal system events. "No tools" strips out tool calls and their output so you see only the conversation. "User" shows your messages. "Answers" shows user messages plus final answers with checkmarks. "All" shows everything including turn-started, rolled-back, and token events.
 
-![User filter active — sidebar shows only user messages with person icons](fbdb3dfa-2026-02-18.png)
+![User filter active — sidebar shows only user messages with person icons](images/user-filter.png)
 
-![Answers filter showing user messages and final answers with green checkmarks](ee55a207-2026-02-18.png)
+![Answers filter showing user messages and final answers with green checkmarks](images/answers-filter.png)
 
-![No tools filter hiding tool calls to show only conversation flow](beb7542c-2026-02-18.png)
+![No tools filter hiding tool calls to show only conversation flow](images/no-tools-filter.png)
 
 ## Search
 
 The search box at the top of the sidebar does live text filtering across all event labels. Type a keyword and the sidebar instantly narrows to matching entries.
 
-![Search for "textual" filtering sidebar to only matching events](8bdcc74d-2026-02-18.png)
+![Search for "textual" filtering sidebar to only matching events](images/search.png)
 
 ## How It Works
 

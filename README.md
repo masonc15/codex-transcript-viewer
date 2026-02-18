@@ -2,6 +2,10 @@
 
 Converts Codex CLI JSONL session transcripts into single-file HTML viewers with sidebar navigation, search, and filtering. No external dependencies. Just open the `.html` in any browser.
 
+![Viewer overview](docs/images/overview.png)
+
+See the [full demo](docs/demo.md) for more screenshots and a walkthrough of every feature.
+
 ## Install
 
 ```
