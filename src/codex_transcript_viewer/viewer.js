@@ -39,5 +39,23 @@ function applyFilters(search) {
   });
 }
 
+// Smooth scroll to target on sidebar click
+document.querySelectorAll('.tree-node').forEach(node => {
+  node.addEventListener('click', function(e) {
+    e.preventDefault();
+    const id = this.getAttribute('href')?.slice(1);
+    if (id) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.style.outline = '2px solid var(--accent)';
+        setTimeout(() => el.style.outline = '', 2000);
+      }
+    }
+    document.querySelectorAll('.tree-node').forEach(n => n.classList.remove('active'));
+    this.classList.add('active');
+  });
+});
+
 // Apply default filter on load
 applyFilters();

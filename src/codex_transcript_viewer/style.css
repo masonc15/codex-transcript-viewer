@@ -135,6 +135,7 @@ body {
 }
 
 .tree-node:hover { background: var(--selectedBg); }
+.tree-node.active { background: var(--selectedBg); font-weight: bold; }
 
 .tree-ts {
   color: var(--dim);
