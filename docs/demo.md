@@ -31,27 +31,17 @@ src/codex_transcript_viewer/style.css (     476 lines)
 src/codex_transcript_viewer/viewer.js (      61 lines)
 ```
 
-To generate a viewer, point the tool at any Codex session JSONL file. Codex stores these under ~/.codex/sessions/.
+To generate a viewer, point the tool at any Codex session JSONL file. Codex stores these under `~/.codex/sessions/`.
 
 ```bash
-uv run --directory ~/workspace/codex-transcript-viewer codex-transcript-viewer '/Users/colin/.codex/sessions/2026/02/18/rollout-2026-02-18T00-13-01-019c6f2a-7baf-7703-9b90-bac9cc85c961.jsonl' /tmp/demo-session.html 2>&1 && ls -lh /tmp/demo-session.html | awk '{print $5, $9}'
+codex-transcript-viewer ~/.codex/sessions/2026/02/18/rollout-session.jsonl output.html
 ```
 
 ```output
-written to /tmp/demo-session.html (22,761 bytes, 8 events)
-22K /tmp/demo-session.html
+written to output.html (22,761 bytes, 8 events)
 ```
 
-The example below uses a 608-event session (908 KB output). Everything — CSS, JS, rendered HTML — gets packed into a single file.
-
-```bash
-ls -lh /Users/colin/codex-session-019c7149-b803-71d3-ac66-d7e7c9840b9f.html | awk '{print "Size:", $5}' && grep -c 'class="event' /Users/colin/codex-session-019c7149-b803-71d3-ac66-d7e7c9840b9f.html | xargs -I{} echo 'Events: {}'
-```
-
-```output
-Size: 886K
-Events: 192
-```
+Larger sessions scale fine. A 608-event session produces a single 886 KB HTML file with everything — CSS, JS, rendered content — packed inside.
 
 ## Full Viewer Overview
 
