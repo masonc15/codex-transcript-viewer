@@ -5,13 +5,14 @@ Converts Codex CLI JSONL session transcripts into self-contained HTML files you 
 ## Install
 
 ```
-uv tool install ~/workspace/codex-transcript-viewer
+git clone https://github.com/masonc15/codex-transcript-viewer.git
+uv tool install ./codex-transcript-viewer
 ```
 
 Or run directly without installing:
 
 ```
-uv run --directory ~/workspace/codex-transcript-viewer codex-transcript-viewer <session.jsonl>
+uv run --directory ./codex-transcript-viewer codex-transcript-viewer <session.jsonl>
 ```
 
 ## Usage
