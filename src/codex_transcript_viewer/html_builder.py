@@ -243,6 +243,28 @@ def _render_thread_rolled_back(evt, ts, anchor, sidebar, messages):
     )
 
 
+def _render_token_count(evt, ts, anchor, sidebar, messages):
+    total = evt["total"]
+    if total.get("input_tokens", 0) <= 0:
+        return
+    tok_str = (
+        f"in:{total.get('input_tokens',0):,} "
+        f"out:{total.get('output_tokens',0):,} "
+        f"reasoning:{total.get('reasoning_output_tokens',0):,}"
+    )
+    sidebar.append(
+        f'<a class="tree-node tree-role-system" href="#{anchor}">'
+        f'<span class="tree-ts">{ts}</span> '
+        f'<span class="tree-content">\U0001f4ca {tok_str}</span></a>'
+    )
+    messages.append(
+        f'<div class="token-count" id="{anchor}">'
+        f'<div class="message-timestamp">{ts}</div>'
+        f'<span class="event-label">\U0001f4ca Tokens \u2014 {tok_str}</span>'
+        f"</div>"
+    )
+
+
 _EVENT_HANDLERS = {
     "user_message": _render_user_message,
     "reasoning": _render_reasoning,
@@ -254,6 +276,7 @@ _EVENT_HANDLERS = {
     "task_started": _render_task_started,
     "turn_aborted": _render_turn_aborted,
     "thread_rolled_back": _render_thread_rolled_back,
+    "token_count": _render_token_count,
 }
 
 

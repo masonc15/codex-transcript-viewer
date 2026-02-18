@@ -296,6 +296,12 @@ body {
   color: var(--error);
 }
 
+.token-count {
+  padding: 2px var(--line-height);
+  font-size: 10px;
+  color: var(--dim);
+}
+
 /* Markdown */
 .markdown-content {
   white-space: pre-wrap;

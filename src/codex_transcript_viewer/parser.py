@@ -110,6 +110,17 @@ def _handle_event_msg(
                 "reason": payload.get("reason", ""),
             }
         )
+    elif msg_type == "token_count":
+        info = payload.get("info") or {}
+        total = info.get("total_token_usage", {})
+        if total and any(v > 0 for v in total.values()):
+            events.append(
+                {
+                    "type": "token_count",
+                    "ts": ts,
+                    "total": total,
+                }
+            )
     elif msg_type == "thread_rolled_back":
         events.append(
             {
