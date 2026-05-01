@@ -284,6 +284,27 @@ body {
 .tool-header { font-weight: bold; margin-bottom: 4px; }
 .tool-name { color: var(--accent); }
 
+.tool-param {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 8px;
+  padding: 4px 0;
+  border-top: 1px solid rgba(128, 128, 128, 0.16);
+}
+
+.tool-param:first-child {
+  border-top: 0;
+}
+
+.tool-param-name {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.tool-param-value {
+  min-width: 0;
+}
+
 .tool-command {
   font-weight: bold;
   white-space: pre-wrap;
@@ -291,7 +312,8 @@ body {
   color: var(--success);
 }
 
-.tool-args pre {
+.tool-args pre,
+.tool-param-value pre {
   white-space: pre-wrap;
   word-wrap: break-word;
   font-family: inherit;

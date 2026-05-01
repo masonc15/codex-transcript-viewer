@@ -127,13 +127,45 @@ def _render_assistant_text(evt, ts, anchor, sidebar, messages):
     )
 
 
+def _compact_json(value):
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _format_param_value(value, key=""):
+    if key == "cmd" and isinstance(value, str):
+        return f'<span class="tool-command">$ {escape(value)}</span>'
+    if isinstance(value, str):
+        return f"<pre>{escape(value)}</pre>"
+    return f"<pre>{escape(json.dumps(value, ensure_ascii=False, indent=2))}</pre>"
+
+
+def _format_tool_args(arguments):
+    try:
+        args_obj = json.loads(arguments)
+    except (json.JSONDecodeError, TypeError):
+        return f"<pre>{escape(arguments)}</pre>"
+
+    if not isinstance(args_obj, dict):
+        return f"<pre>{escape(json.dumps(args_obj, ensure_ascii=False, indent=2))}</pre>"
+
+    rows = []
+    for key, value in args_obj.items():
+        rows.append(
+            f'<div class="tool-param">'
+            f'<div class="tool-param-name">{escape(key)}</div>'
+            f'<div class="tool-param-value">{_format_param_value(value, key)}</div>'
+            f"</div>"
+        )
+    return "".join(rows)
+
+
 def _render_tool_call(evt, ts, anchor, sidebar, messages):
     name = evt["name"]
     try:
         args = json.loads(evt["arguments"])
-        args_preview = args.get("cmd", "")[:80] if name == "exec_command" else json.dumps(args, indent=None)[:80]
+        args_preview = _compact_json(args)[:120]
     except (json.JSONDecodeError, TypeError):
-        args_preview = evt["arguments"][:80]
+        args_preview = evt["arguments"][:120]
 
     sidebar.append(
         f'<a class="tree-node tree-role-tool" href="#{anchor}">'
@@ -141,20 +173,11 @@ def _render_tool_call(evt, ts, anchor, sidebar, messages):
         f'<span class="tree-content">\u26a1 {escape(name)}: {escape(args_preview)}</span></a>'
     )
 
-    try:
-        args_obj = json.loads(evt["arguments"])
-        if name == "exec_command":
-            args_display = f'<span class="tool-command">$ {escape(args_obj.get("cmd", ""))}</span>'
-        else:
-            args_display = f"<pre>{escape(json.dumps(args_obj, indent=2))}</pre>"
-    except (json.JSONDecodeError, TypeError):
-        args_display = f"<pre>{escape(evt['arguments'])}</pre>"
-
     messages.append(
         f'<div class="tool-execution pending" id="{anchor}">'
         f'<div class="message-timestamp">{ts}</div>'
         f'<div class="tool-header"><span class="tool-name">{escape(name)}</span></div>'
-        f'<div class="tool-args">{args_display}</div>'
+        f'<div class="tool-args">{_format_tool_args(evt["arguments"])}</div>'
         f"</div>"
     )
 
