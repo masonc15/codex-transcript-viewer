@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -9,20 +10,30 @@ from .html_builder import build_html
 from .parser import extract_conversation, parse_jsonl
 
 
-def main() -> None:
-    if len(sys.argv) < 2:
-        print("usage: codex-transcript-viewer <session.jsonl> [output.html]")
-        sys.exit(1)
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="codex-transcript-viewer",
+        description="Convert a Codex CLI JSONL session into a self-contained HTML viewer.",
+    )
+    parser.add_argument("session", type=Path, help="path to a rollout-*.jsonl session file")
+    parser.add_argument(
+        "output",
+        type=Path,
+        nargs="?",
+        help="output HTML path (default: <session-stem>.html in the current directory)",
+    )
+    return parser.parse_args(argv)
 
-    inpath = Path(sys.argv[1])
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parse_args(argv)
+
+    inpath = args.session
     if not inpath.exists():
         print(f"error: {inpath} not found", file=sys.stderr)
         sys.exit(1)
 
-    if len(sys.argv) >= 3:
-        outpath = Path(sys.argv[2])
-    else:
-        outpath = Path(inpath.stem + ".html")
+    outpath = args.output or Path(inpath.stem + ".html")
 
     entries = parse_jsonl(inpath)
     meta, events = extract_conversation(entries)
