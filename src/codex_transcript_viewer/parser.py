@@ -92,16 +92,23 @@ def _handle_event_msg(
     msg_type = payload.get("type", "")
 
     if msg_type == "user_message":
+        local_images = payload.get("local_images")
+        if not isinstance(local_images, list):
+            local_images = []
         events.append(
             {
                 "type": "user_message",
                 "ts": ts,
                 "text": _as_text(payload.get("message", "")),
-                "images": payload.get("local_images", []),
+                "images": local_images,
+                "attachments": _legacy_image_attachments(local_images),
                 "_source": "event_msg",
+                "_source_kind": "user_message",
                 "_turn_seq": turn_seq,
             }
         )
+    elif msg_type == "item_completed":
+        _handle_item_completed(payload, ts, events, turn_seq)
     elif msg_type == "agent_message":
         events.append(
             {
@@ -187,6 +194,95 @@ def _handle_event_msg(
         )
 
 
+def _legacy_image_attachments(local_images: list) -> list[dict]:
+    attachments = []
+    for image in local_images:
+        path = image.get("path") if isinstance(image, dict) else image
+        if isinstance(path, str) and path:
+            attachments.append({"kind": "local_image", "path": path})
+    return attachments
+
+
+def _data_url_bytes(url: str) -> int:
+    """Approximate decoded size of a base64 data URL."""
+    _, _, data = url.partition(",")
+    return len(data) * 3 // 4
+
+
+def _user_message_attachment(block: dict) -> dict | None:
+    kind = block.get("type")
+    if kind == "local_image":
+        path = block.get("path")
+        return {"kind": "local_image", "path": path} if isinstance(path, str) else None
+    if kind == "image":
+        url = block.get("image_url")
+        if isinstance(url, dict):
+            url = url.get("url")
+        if not isinstance(url, str):
+            return None
+        return {"kind": "image", "bytes": _data_url_bytes(url), "data_url": url}
+    if kind in ("skill", "mention"):
+        name = block.get("name")
+        if not isinstance(name, str) or not name:
+            return None
+        return {"kind": kind, "name": name, "path": _as_text(block.get("path"))}
+    return None
+
+
+def _handle_item_completed(
+    payload: dict[str, Any],
+    ts: str,
+    events: list[dict],
+    turn_seq: int,
+) -> None:
+    """Read typed prompts from CLI 0.135+ sessions.
+
+    Only UserMessage items are used. The other item kinds duplicate
+    response_item records that are already parsed.
+    """
+    item = payload.get("item")
+    if not isinstance(item, dict) or item.get("type") != "UserMessage":
+        return
+    content = item.get("content")
+    if not isinstance(content, list):
+        content = []
+
+    texts: list[str] = []
+    attachments: list[dict] = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "text":
+            text = _as_text(block.get("text"))
+            if text:
+                texts.append(text)
+            continue
+        attachment = _user_message_attachment(block)
+        if attachment is not None:
+            attachments.append(attachment)
+
+    text = "\n\n".join(texts).strip()
+    if not text and not attachments:
+        return
+
+    event = {
+        "type": "user_message",
+        "ts": ts,
+        "text": text,
+        "images": [a["path"] for a in attachments if a["kind"] == "local_image"],
+        "attachments": attachments,
+        "turn_id": _as_text(payload.get("turn_id")),
+        "item_id": _as_text(item.get("id")),
+        "_source": "event_msg",
+        "_source_kind": "item_completed",
+        "_turn_seq": turn_seq,
+    }
+    client_id = item.get("client_id")
+    if isinstance(client_id, str) and client_id:
+        event["client_id"] = client_id
+    events.append(event)
+
+
 def _handle_response_item(
     payload: dict[str, Any],
     ts: str,
@@ -219,6 +315,10 @@ def _handle_response_item(
                 "_turn_seq": turn_seq,
             }
         )
+    # Messages with role "user" are the model's input, not what the user typed:
+    # they carry injected context (environment, AGENTS.md, skills) and, in
+    # forked subagents, the parent's history. Typed prompts come from
+    # event_msg user_message (CLI <= 0.125) or item_completed UserMessage.
     elif item_type == "message" and role == "assistant":
         content = payload.get("content", [])
         phase = payload.get("phase", "")
@@ -387,9 +487,29 @@ def _drop_overlapped_event_msg_events(events: list[dict]) -> list[dict]:
     return filtered
 
 
+def _drop_legacy_prompts_shadowed_by_items(events: list[dict]) -> list[dict]:
+    """Keep one prompt source per turn if a session ever records both."""
+    item_turns = {
+        event.get("_turn_seq")
+        for event in events
+        if event.get("type") == "user_message"
+        and event.get("_source_kind") == "item_completed"
+    }
+    return [
+        event
+        for event in events
+        if not (
+            event.get("type") == "user_message"
+            and event.get("_source_kind") == "user_message"
+            and event.get("_turn_seq") in item_turns
+        )
+    ]
+
+
 def _reconcile_events(events: list[dict]) -> list[dict]:
     merged = _merge_adjacent_token_events(events)
-    return _drop_overlapped_event_msg_events(merged)
+    deduped = _drop_overlapped_event_msg_events(merged)
+    return _drop_legacy_prompts_shadowed_by_items(deduped)
 
 
 def _strip_internal_keys(event: dict) -> dict:
