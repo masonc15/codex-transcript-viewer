@@ -249,19 +249,33 @@ def _handle_response_item(
                 )
 
 
+_TOOL_EVENT_TYPES = {"tool_call", "tool_output"}
+
+
 def _merge_adjacent_token_events(events: list[dict]) -> list[dict]:
+    """Collapse repeated token totals within a turn.
+
+    Tool events between two token_count events do not break the run, so how
+    many tool calls are visible never changes which token totals survive.
+    """
     merged: list[dict] = []
+    last_non_tool: dict | None = None
     for event in events:
+        if event.get("type") in _TOOL_EVENT_TYPES:
+            merged.append(event.copy())
+            continue
         if (
             event.get("type") == "token_count"
-            and merged
-            and merged[-1].get("type") == "token_count"
-            and merged[-1].get("_turn_seq") == event.get("_turn_seq")
-            and merged[-1].get("total") == event.get("total")
+            and last_non_tool is not None
+            and last_non_tool.get("type") == "token_count"
+            and last_non_tool.get("_turn_seq") == event.get("_turn_seq")
+            and last_non_tool.get("total") == event.get("total")
         ):
-            _merge_token_metadata(merged[-1], event)
+            _merge_token_metadata(last_non_tool, event)
             continue
-        merged.append(event.copy())
+        copy = event.copy()
+        merged.append(copy)
+        last_non_tool = copy
     return merged
 
 
@@ -292,6 +306,8 @@ def _is_response_counterpart(candidate: dict, response_event: dict) -> bool:
         return False
 
     candidate_type = candidate.get("type")
+    candidate_text = _normalize_text(candidate.get("text", ""))
+    response_text = _normalize_text(response_event.get("text", ""))
     if candidate_type == "agent_commentary":
         if response_event.get("type") != "assistant_text":
             return False
@@ -304,34 +320,39 @@ def _is_response_counterpart(candidate: dict, response_event: dict) -> bool:
         if response_event.get("type") != "assistant_text":
             return False
         if response_event.get("phase") != "final_answer":
-            return False
+            # Plan-mode turns end on commentary; task_complete repeats it verbatim.
+            return candidate_text == response_text
+        # task_complete often repeats the final answer without its trailing block.
+        return bool(candidate_text) and response_text.startswith(candidate_text)
     else:
         return False
 
-    return _normalize_text(candidate.get("text", "")) == _normalize_text(
-        response_event.get("text", "")
-    )
+    return candidate_text == response_text
+
+
+_MATCHABLE_EVENT_MSG_TYPES = {"agent_commentary", "reasoning", "task_complete"}
+_RESPONSE_COUNTERPART_TYPES = {"assistant_text", "reasoning"}
 
 
 def _find_matching_response_index(
     events: list[dict],
     idx: int,
+    turn_pool: list[int],
     used_indices: set[int],
-    *,
-    window: int = 8,
 ) -> int | None:
+    """Return the nearest unused same-turn response_item duplicating events[idx].
+
+    The pool holds only response-side message and reasoning events, so tool
+    events never push a counterpart out of reach.
+    """
     candidate = events[idx]
     if candidate.get("_source") != "event_msg":
         return None
-
-    candidate_type = candidate.get("type")
-    if candidate_type not in {"agent_commentary", "reasoning", "task_complete"}:
+    if candidate.get("type") not in _MATCHABLE_EVENT_MSG_TYPES:
         return None
 
-    start = max(0, idx - window)
-    end = min(len(events), idx + window + 1)
-    for j in range(start, end):
-        if j == idx or j in used_indices:
+    for j in sorted(turn_pool, key=lambda j: abs(j - idx)):
+        if j in used_indices:
             continue
         if _is_response_counterpart(candidate, events[j]):
             return j
@@ -339,6 +360,14 @@ def _find_matching_response_index(
 
 
 def _drop_overlapped_event_msg_events(events: list[dict]) -> list[dict]:
+    pools: dict[Any, list[int]] = {}
+    for idx, event in enumerate(events):
+        if (
+            event.get("_source") == "response_item"
+            and event.get("type") in _RESPONSE_COUNTERPART_TYPES
+        ):
+            pools.setdefault(event.get("_turn_seq"), []).append(idx)
+
     filtered: list[dict] = []
     used_response_indices: set[int] = set()
 
@@ -346,7 +375,9 @@ def _drop_overlapped_event_msg_events(events: list[dict]) -> list[dict]:
         if event.get("type") == "task_complete" and not _normalize_text(event.get("text", "")):
             continue
 
-        match_idx = _find_matching_response_index(events, idx, used_response_indices)
+        match_idx = _find_matching_response_index(
+            events, idx, pools.get(event.get("_turn_seq"), []), used_response_indices
+        )
         if match_idx is not None:
             used_response_indices.add(match_idx)
             continue
