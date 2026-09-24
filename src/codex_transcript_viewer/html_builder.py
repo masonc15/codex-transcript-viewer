@@ -71,7 +71,7 @@ def build_html(meta: dict | None, events: list[dict]) -> str:
 def _render_user_message(evt, ts, anchor, sidebar, messages):
     text_preview = evt["text"][:80].replace("\n", " ")
     sidebar.append(
-        f'<a class="tree-node tree-role-user" href="#{anchor}">'
+        f'<a class="tree-node tree-role-user" data-kind="user" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
         f'<span class="tree-content">\U0001f464 {escape(text_preview)}</span></a>'
     )
@@ -112,10 +112,13 @@ def _render_agent_commentary(evt, ts, anchor, sidebar, messages):
 
 
 def _render_assistant_text(evt, ts, anchor, sidebar, messages):
+    if evt.get("phase") == "final_answer":
+        _render_task_complete(evt, ts, anchor, sidebar, messages)
+        return
     phase_label = f' ({evt["phase"]})' if evt.get("phase") else ""
     preview = evt["text"][:60].replace("\n", " ")
     sidebar.append(
-        f'<a class="tree-node tree-role-assistant" href="#{anchor}">'
+        f'<a class="tree-node tree-role-assistant" data-kind="assistant" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
         f'<span class="tree-content">\U0001f916 {escape(preview)}</span></a>'
     )
@@ -212,7 +215,7 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages):
 def _render_task_complete(evt, ts, anchor, sidebar, messages):
     preview = evt["text"][:60].replace("\n", " ")
     sidebar.append(
-        f'<a class="tree-node tree-role-assistant" href="#{anchor}">'
+        f'<a class="tree-node tree-role-assistant" data-kind="final-answer" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
         f'<span class="tree-content">\u2705 {escape(preview)}</span></a>'
     )

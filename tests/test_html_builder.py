@@ -33,5 +33,22 @@ class HtmlBuilderTests(unittest.TestCase):
         self.assertIn("12000", html)
 
 
+    def test_final_answers_are_marked_for_the_answers_filter(self) -> None:
+        html = build_html(
+            {"id": "session-1"},
+            [
+                {"type": "user_message", "ts": "", "text": "question"},
+                {"type": "assistant_text", "ts": "", "text": "note", "phase": "commentary"},
+                {"type": "assistant_text", "ts": "", "text": "answer", "phase": "final_answer"},
+                {"type": "task_complete", "ts": "", "text": "fallback answer", "turn_id": "t"},
+            ],
+        )
+
+        self.assertEqual(html.count('data-kind="final-answer"'), 2)
+        self.assertEqual(html.count('data-kind="user"'), 1)
+        self.assertEqual(html.count('data-kind="assistant"'), 1)
+        self.assertIn("node.dataset.kind === 'final-answer'", html)
+
+
 if __name__ == "__main__":
     unittest.main()

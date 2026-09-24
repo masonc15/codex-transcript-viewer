@@ -26,7 +26,7 @@ function applyFilters(search) {
     } else if (activeFilter === 'user-only') {
       visible = classes.includes('tree-role-user');
     } else if (activeFilter === 'answers') {
-      visible = classes.includes('tree-role-user') || (classes.includes('tree-role-assistant') && text.includes('\u2705'));
+      visible = node.dataset.kind === 'user' || node.dataset.kind === 'final-answer';
     } else if (activeFilter === 'default') {
       visible = !classes.includes('tree-role-system') && !classes.includes('tree-role-thinking');
     }
