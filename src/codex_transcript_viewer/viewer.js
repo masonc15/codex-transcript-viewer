@@ -47,6 +47,8 @@ document.querySelectorAll('.tree-node').forEach(node => {
     if (id) {
       const el = document.getElementById(id);
       if (el) {
+        const folded = el.tagName === 'DETAILS' ? el : el.closest('details');
+        if (folded) folded.open = true;
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         el.style.outline = '2px solid var(--accent)';
         setTimeout(() => el.style.outline = '', 2000);

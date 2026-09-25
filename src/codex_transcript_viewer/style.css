@@ -151,6 +151,7 @@ body {
 .tree-role-thinking .tree-content { color: var(--thinkingText); }
 .tree-role-system .tree-content { color: var(--dim); }
 .tree-role-error .tree-content { color: var(--error); }
+.tree-role-inherited .tree-content { color: var(--dim); font-style: italic; }
 
 /* Main content */
 #content {
@@ -306,6 +307,21 @@ body {
 
 .thinking-text {
   white-space: pre-wrap;
+}
+
+.inherited-history {
+  border-left: 3px dashed var(--dim);
+  padding-left: var(--line-height);
+}
+
+.inherited-history > summary {
+  cursor: pointer;
+  color: var(--dim);
+  font-style: italic;
+}
+
+.inherited-history[open] > summary {
+  margin-bottom: var(--line-height);
 }
 
 /* Tool execution */

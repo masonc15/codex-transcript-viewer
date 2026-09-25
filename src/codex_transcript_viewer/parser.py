@@ -58,6 +58,7 @@ def extract_conversation(
     raw_events: list[dict] = []
     meta: dict | None = None
     turn_seq = 0
+    inherited_turns: set[int] = set()
 
     for entry in entries:
         ts = entry.get("timestamp", "")
@@ -74,6 +75,8 @@ def extract_conversation(
         if etype == "event_msg":
             if payload.get("type", "") == "task_started":
                 turn_seq += 1
+                if _is_inherited_turn(meta, payload):
+                    inherited_turns.add(turn_seq)
             _handle_event_msg(payload, ts, raw_events, turn_seq)
             continue
 
@@ -83,8 +86,45 @@ def extract_conversation(
 
     raw_events = _attach_model_input_images(raw_events)
     reconciled = _reconcile_events(raw_events)
+    for event in reconciled:
+        if event.get("_turn_seq") in inherited_turns:
+            event["inherited"] = True
     cleaned = [_strip_internal_keys(event) for event in reconciled]
     return meta, cleaned
+
+
+_INHERITANCE_TOLERANCE_SECONDS = 3.0
+
+
+def _uuid7_seconds(value: Any) -> float | None:
+    """Creation time embedded in a UUIDv7, in seconds, or None."""
+    if not isinstance(value, str):
+        return None
+    digits = value.replace("-", "")
+    if len(digits) != 32 or digits[12] != "7":
+        return None
+    try:
+        return int(digits[:12], 16) / 1000
+    except ValueError:
+        return None
+
+
+def _is_inherited_turn(meta: dict | None, task_started: dict) -> bool:
+    """True for a turn copied from the parent into a forked subagent log.
+
+    Session and turn ids are UUIDv7, so a turn created before this subagent
+    session existed belongs to the parent's history.
+    """
+    if not isinstance(meta, dict):
+        return False
+    source = meta.get("source")
+    if not isinstance(source, dict) or "subagent" not in source:
+        return False
+    session_time = _uuid7_seconds(meta.get("id"))
+    turn_time = _uuid7_seconds(task_started.get("turn_id"))
+    if session_time is None or turn_time is None:
+        return False
+    return turn_time < session_time - _INHERITANCE_TOLERANCE_SECONDS
 
 
 def _handle_event_msg(

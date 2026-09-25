@@ -44,15 +44,35 @@ def build_html(
     message_blocks: list[str] = []
     msg_idx = 0
 
-    for evt in events:
+    inherited_run = 0
+    for i, evt in enumerate(events):
         etype = evt["type"]
         ts = format_ts(evt["ts"])
         msg_idx += 1
         anchor = f"msg-{msg_idx}"
 
+        inherited = bool(evt.get("inherited"))
+        if inherited and not (i and events[i - 1].get("inherited")):
+            inherited_run += 1
+            run_length = _inherited_run_length(events, i)
+            run_anchor = f"inherited-{inherited_run}"
+            sidebar_items.append(
+                f'<a class="tree-node tree-role-inherited" data-kind="inherited" href="#{run_anchor}">'
+                f'<span class="tree-ts">{ts}</span> '
+                f'<span class="tree-content">\u21aa Inherited parent history ({run_length})</span></a>'
+            )
+            message_blocks.append(
+                f'<details class="inherited-history" id="{run_anchor}">'
+                f"<summary>Inherited from the parent session \u00b7 {run_length} entries</summary>"
+            )
+
         handler = _EVENT_HANDLERS.get(etype)
         if handler:
-            handler(evt, ts, anchor, sidebar_items, message_blocks, ctx)
+            # Inherited entries stay out of the sidebar; one node links the block.
+            handler(evt, ts, anchor, [] if inherited else sidebar_items, message_blocks, ctx)
+
+        if inherited and not (i + 1 < len(events) and events[i + 1].get("inherited")):
+            message_blocks.append("</details>")
 
     css = _load_asset("style.css")
     js = _load_asset("viewer.js")
@@ -77,6 +97,13 @@ def build_html(
         git_info=escape(branch) + ((" @ " + escape(commit)) if commit else ""),
         generated=generated,
     )
+
+
+def _inherited_run_length(events: list[dict], start: int) -> int:
+    end = start
+    while end < len(events) and events[end].get("inherited"):
+        end += 1
+    return end - start
 
 
 # ---------------------------------------------------------------------------
