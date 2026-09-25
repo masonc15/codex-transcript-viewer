@@ -238,6 +238,42 @@ body {
   border-left: 3px solid var(--accent);
 }
 
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.attachment-image {
+  margin: 0;
+}
+
+.attachment-image img {
+  display: block;
+  max-height: 240px;
+  max-width: 100%;
+  border: 1px solid var(--dim);
+  border-radius: 3px;
+  cursor: zoom-in;
+}
+
+.attachment-image img.full {
+  max-height: none;
+  cursor: zoom-out;
+}
+
+.attachment-image figcaption,
+.attachment-note {
+  font-size: 10px;
+  color: var(--dim);
+}
+
+.attachment-chip {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .assistant-message {
   padding: var(--line-height);
   border-radius: 4px;

@@ -78,6 +78,7 @@ def extract_conversation(
             _handle_response_item(payload, ts, raw_events, turn_seq)
             continue
 
+    raw_events = _attach_model_input_images(raw_events)
     reconciled = _reconcile_events(raw_events)
     cleaned = [_strip_internal_keys(event) for event in reconciled]
     return meta, cleaned
@@ -229,6 +230,51 @@ def _user_message_attachment(block: dict) -> dict | None:
     return None
 
 
+_MODEL_INPUT_IMAGES = "_model_input_images"
+_IMAGE_ATTACHMENT_KINDS = {"local_image", "image"}
+
+
+def _input_image_urls(content: Any) -> list[str]:
+    if not isinstance(content, list):
+        return []
+    urls = []
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "input_image":
+            continue
+        url = block.get("image_url")
+        if isinstance(url, dict):
+            url = url.get("url")
+        if isinstance(url, str) and url.startswith("data:image/"):
+            urls.append(url)
+    return urls
+
+
+def _attach_model_input_images(events: list[dict]) -> list[dict]:
+    """Give prompt image attachments the bytes the model received.
+
+    Local image files are usually gone (temp paths), but the session keeps the
+    base64 copy sent to the model in the same turn, in the same order.
+    """
+    queues: dict[Any, list[str]] = {}
+    for event in events:
+        if event.get("type") == _MODEL_INPUT_IMAGES:
+            queues.setdefault(event.get("_turn_seq"), []).extend(event["urls"])
+
+    for event in events:
+        if event.get("type") != "user_message":
+            continue
+        queue = queues.get(event.get("_turn_seq"))
+        for attachment in event.get("attachments", []):
+            if attachment.get("kind") not in _IMAGE_ATTACHMENT_KINDS or not queue:
+                continue
+            url = queue.pop(0)
+            if "data_url" not in attachment:
+                attachment["data_url"] = url
+                attachment["bytes"] = _data_url_bytes(url)
+
+    return [event for event in events if event.get("type") != _MODEL_INPUT_IMAGES]
+
+
 def _handle_item_completed(
     payload: dict[str, Any],
     ts: str,
@@ -315,6 +361,18 @@ def _handle_response_item(
                 "_turn_seq": turn_seq,
             }
         )
+    elif item_type == "message" and role == "user":
+        # Only the images are used; see the note below about the text.
+        urls = _input_image_urls(payload.get("content"))
+        if urls:
+            events.append(
+                {
+                    "type": _MODEL_INPUT_IMAGES,
+                    "urls": urls,
+                    "_source": "response_item",
+                    "_turn_seq": turn_seq,
+                }
+            )
     # Messages with role "user" are the model's input, not what the user typed:
     # they carry injected context (environment, AGENTS.md, skills) and, in
     # forked subagents, the parent's history. Typed prompts come from

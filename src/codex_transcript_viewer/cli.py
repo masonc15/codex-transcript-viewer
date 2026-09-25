@@ -22,6 +22,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         nargs="?",
         help="output HTML path (default: <session-stem>.html in the current directory)",
     )
+    parser.add_argument(
+        "--no-images",
+        action="store_true",
+        help="show images as labelled placeholders instead of embedding them",
+    )
     return parser.parse_args(argv)
 
 
@@ -37,7 +42,7 @@ def main(argv: list[str] | None = None) -> None:
 
     entries = parse_jsonl(inpath)
     meta, events = extract_conversation(entries)
-    html_content = build_html(meta, events)
+    html_content = build_html(meta, events, embed_images=not args.no_images)
 
     outpath.write_text(html_content, encoding="utf-8")
     size = outpath.stat().st_size

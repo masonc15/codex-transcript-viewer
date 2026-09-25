@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+from dataclasses import dataclass
 from datetime import datetime
 from importlib import resources
 
@@ -15,8 +17,21 @@ def _load_asset(name: str) -> str:
     return resources.files(__package__).joinpath(name).read_text(encoding="utf-8")
 
 
-def build_html(meta: dict | None, events: list[dict]) -> str:
+@dataclass
+class RenderContext:
+    """Options and running state shared by the per-event renderers."""
+
+    embed_images: bool = True
+
+
+def build_html(
+    meta: dict | None,
+    events: list[dict],
+    *,
+    embed_images: bool = True,
+) -> str:
     """Build a self-contained HTML string from session metadata and events."""
+    ctx = RenderContext(embed_images=embed_images)
     session_id = meta.get("id", "unknown") if meta else "unknown"
     model = meta.get("model_provider", "") if meta else ""
     cli_version = meta.get("cli_version", "") if meta else ""
@@ -37,7 +52,7 @@ def build_html(meta: dict | None, events: list[dict]) -> str:
 
         handler = _EVENT_HANDLERS.get(etype)
         if handler:
-            handler(evt, ts, anchor, sidebar_items, message_blocks)
+            handler(evt, ts, anchor, sidebar_items, message_blocks, ctx)
 
     css = _load_asset("style.css")
     js = _load_asset("viewer.js")
@@ -68,22 +83,82 @@ def build_html(meta: dict | None, events: list[dict]) -> str:
 # Per-event-type rendering functions
 # ---------------------------------------------------------------------------
 
-def _render_user_message(evt, ts, anchor, sidebar, messages):
-    text_preview = evt["text"][:80].replace("\n", " ")
+_DATA_URL_RE = re.compile(r"^data:image/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+$")
+
+
+def _basename(path: str) -> str:
+    return path.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+
+
+def _format_bytes(n: int) -> str:
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f} MB"
+    return f"{max(1, round(n / 1000))} KB"
+
+
+def _image_label(attachment: dict) -> str:
+    if attachment.get("kind") == "local_image" and attachment.get("path"):
+        return _basename(attachment["path"])
+    return "pasted image"
+
+
+def _render_image(attachment: dict, ctx: RenderContext) -> str:
+    """Render an image attachment as a thumbnail, or as a chip when not embedded."""
+    label = _image_label(attachment)
+    url = attachment.get("data_url", "")
+    size = attachment.get("bytes")
+    if ctx.embed_images and isinstance(url, str) and _DATA_URL_RE.match(url):
+        return (
+            '<figure class="attachment-image">'
+            f'<img src="{url}" alt="{escape(label)}" loading="lazy" decoding="async" '
+            "onclick=\"this.classList.toggle('full')\">"
+            f"<figcaption>{escape(label)}</figcaption></figure>"
+        )
+    detail = f", {_format_bytes(size)}" if isinstance(size, int) and size > 0 else ""
+    return f'<span class="attachment-chip">[image: {escape(label)}{detail}]</span>'
+
+
+def _render_attachments(attachments: list[dict], ctx: RenderContext) -> str:
+    parts = []
+    for attachment in attachments:
+        kind = attachment.get("kind")
+        if kind in ("local_image", "image"):
+            parts.append(_render_image(attachment, ctx))
+        elif kind == "skill":
+            parts.append(f'<span class="attachment-chip">[${escape(attachment.get("name"))}]</span>')
+        elif kind == "mention":
+            parts.append(f'<span class="attachment-chip">[@{escape(attachment.get("name"))}]</span>')
+    if not parts:
+        return ""
+    return f'<div class="attachments">{"".join(parts)}</div>'
+
+
+def _render_user_message(evt, ts, anchor, sidebar, messages, ctx):
+    attachments = evt.get("attachments") or []
+    text = evt["text"]
+    text_preview = text[:80].replace("\n", " ")
+    if not text_preview and attachments:
+        text_preview = "[attachment only]"
     sidebar.append(
         f'<a class="tree-node tree-role-user" data-kind="user" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
         f'<span class="tree-content">\U0001f464 {escape(text_preview)}</span></a>'
     )
+    body = (
+        f'<div class="markdown-content">{render_markdown(text)}</div>'
+        if text
+        else '<div class="attachment-note">(attachment only)</div>'
+    )
     messages.append(
         f'<div class="user-message" id="{anchor}">'
         f'<div class="message-timestamp">{ts}</div>'
-        f'<div class="markdown-content">{render_markdown(evt["text"])}</div>'
+        f"{body}"
+        f"{_render_attachments(attachments, ctx)}"
         f"</div>"
     )
 
 
-def _render_reasoning(evt, ts, anchor, sidebar, messages):
+def _render_reasoning(evt, ts, anchor, sidebar, messages, ctx):
     sidebar.append(
         f'<a class="tree-node tree-role-thinking" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
@@ -97,7 +172,7 @@ def _render_reasoning(evt, ts, anchor, sidebar, messages):
     )
 
 
-def _render_agent_commentary(evt, ts, anchor, sidebar, messages):
+def _render_agent_commentary(evt, ts, anchor, sidebar, messages, ctx):
     sidebar.append(
         f'<a class="tree-node tree-role-assistant" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
@@ -111,9 +186,9 @@ def _render_agent_commentary(evt, ts, anchor, sidebar, messages):
     )
 
 
-def _render_assistant_text(evt, ts, anchor, sidebar, messages):
+def _render_assistant_text(evt, ts, anchor, sidebar, messages, ctx):
     if evt.get("phase") == "final_answer":
-        _render_task_complete(evt, ts, anchor, sidebar, messages)
+        _render_task_complete(evt, ts, anchor, sidebar, messages, ctx)
         return
     phase_label = f' ({evt["phase"]})' if evt.get("phase") else ""
     preview = evt["text"][:60].replace("\n", " ")
@@ -162,7 +237,7 @@ def _format_tool_args(arguments):
     return "".join(rows)
 
 
-def _render_tool_call(evt, ts, anchor, sidebar, messages):
+def _render_tool_call(evt, ts, anchor, sidebar, messages, ctx):
     name = evt["name"]
     try:
         args = json.loads(evt["arguments"])
@@ -185,7 +260,7 @@ def _render_tool_call(evt, ts, anchor, sidebar, messages):
     )
 
 
-def _render_tool_output(evt, ts, anchor, sidebar, messages):
+def _render_tool_output(evt, ts, anchor, sidebar, messages, ctx):
     output = evt["output"]
     truncated = len(output) > 2000
     preview = output[:2000]
@@ -212,7 +287,7 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages):
     )
 
 
-def _render_task_complete(evt, ts, anchor, sidebar, messages):
+def _render_task_complete(evt, ts, anchor, sidebar, messages, ctx):
     preview = evt["text"][:60].replace("\n", " ")
     sidebar.append(
         f'<a class="tree-node tree-role-assistant" data-kind="final-answer" href="#{anchor}">'
@@ -227,7 +302,7 @@ def _render_task_complete(evt, ts, anchor, sidebar, messages):
     )
 
 
-def _render_task_started(evt, ts, anchor, sidebar, messages):
+def _render_task_started(evt, ts, anchor, sidebar, messages, ctx):
     sidebar.append(
         f'<a class="tree-node tree-role-system" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
@@ -241,7 +316,7 @@ def _render_task_started(evt, ts, anchor, sidebar, messages):
     )
 
 
-def _render_turn_aborted(evt, ts, anchor, sidebar, messages):
+def _render_turn_aborted(evt, ts, anchor, sidebar, messages, ctx):
     reason = escape(evt["reason"])
     sidebar.append(
         f'<a class="tree-node tree-role-error" href="#{anchor}">'
@@ -256,7 +331,7 @@ def _render_turn_aborted(evt, ts, anchor, sidebar, messages):
     )
 
 
-def _render_thread_rolled_back(evt, ts, anchor, sidebar, messages):
+def _render_thread_rolled_back(evt, ts, anchor, sidebar, messages, ctx):
     n = evt["num_turns"]
     sidebar.append(
         f'<a class="tree-node tree-role-system" href="#{anchor}">'
@@ -271,7 +346,7 @@ def _render_thread_rolled_back(evt, ts, anchor, sidebar, messages):
     )
 
 
-def _render_token_count(evt, ts, anchor, sidebar, messages):
+def _render_token_count(evt, ts, anchor, sidebar, messages, ctx):
     total = evt["total"]
     if total.get("input_tokens", 0) <= 0:
         return
