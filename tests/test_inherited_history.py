@@ -61,5 +61,22 @@ class InheritedHistoryTests(unittest.TestCase):
         self.assertGreater(body.index("child answer"), body.index("</details>"))
 
 
+    def test_header_labels_subagent_and_parent(self) -> None:
+        meta, events = extract_conversation(_session(
+            {"subagent": {"thread_spawn": {"parent_thread_id": "parent-1", "depth": 1,
+                                           "agent_nickname": "Huygens", "agent_path": "/root/find"}}}))
+        html = build_html(meta, events)
+        self.assertIn("Huygens (/root/find, depth 1)", html)
+        self.assertIn("parent-1", html)
+        self.assertIn("Forked from the parent", html)
+
+    def test_other_subagent_kinds_and_plain_sessions(self) -> None:
+        meta, events = extract_conversation(_session({"subagent": "review"}))
+        self.assertIn('<span class="info-label">Subagent</span><span class="info-value">review</span>',
+                      build_html(meta, events))
+        meta, events = extract_conversation(_session("cli"))
+        self.assertNotIn('<span class="info-label">Subagent</span>', build_html(meta, events))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -95,8 +95,45 @@ def build_html(
         cli_version=escape(cli_version),
         cwd=escape(cwd),
         git_info=escape(branch) + ((" @ " + escape(commit)) if commit else ""),
+        subagent_info=_subagent_info_html(meta, events),
         generated=generated,
     )
+
+
+def _subagent_info_html(meta: dict | None, events: list[dict]) -> str:
+    """Header rows that identify a subagent thread and its parent."""
+    source = meta.get("source") if isinstance(meta, dict) else None
+    if not isinstance(source, dict) or "subagent" not in source:
+        return ""
+    sub = source["subagent"]
+    spawn = sub.get("thread_spawn") if isinstance(sub, dict) else None
+    if isinstance(spawn, dict):
+        name = spawn.get("agent_nickname") or "subagent"
+        details = [str(spawn.get(k)) for k in ("agent_path", "agent_role") if spawn.get(k)]
+        if spawn.get("depth") is not None:
+            details.append(f"depth {spawn['depth']}")
+        label = name + (f" ({', '.join(details)})" if details else "")
+        parent = spawn.get("parent_thread_id") or ""
+    else:
+        kind = sub.get("other") if isinstance(sub, dict) else sub
+        label = str(kind or "subagent")
+        parent = ""
+    rows = [
+        '<div class="info-item"><span class="info-label">Subagent</span>'
+        f'<span class="info-value">{escape(label)}</span></div>'
+    ]
+    if parent:
+        rows.append(
+            '<div class="info-item"><span class="info-label">Parent Thread</span>'
+            f'<span class="info-value">{escape(parent)}</span></div>'
+        )
+    if any(evt.get("inherited") for evt in events):
+        rows.append(
+            '<div class="info-item"><span class="info-label">History</span>'
+            '<span class="info-value">Forked from the parent; its earlier turns are '
+            "collapsed below</span></div>"
+        )
+    return "\n          " + "\n          ".join(rows)
 
 
 def _inherited_run_length(events: list[dict], start: int) -> int:
@@ -451,7 +488,7 @@ _HTML_TEMPLATE = """\
           <div class="info-item"><span class="info-label">Model</span><span class="info-value">{model}</span></div>
           <div class="info-item"><span class="info-label">CLI Version</span><span class="info-value">{cli_version}</span></div>
           <div class="info-item"><span class="info-label">Working Dir</span><span class="info-value">{cwd}</span></div>
-          <div class="info-item"><span class="info-label">Git Branch</span><span class="info-value">{git_info}</span></div>
+          <div class="info-item"><span class="info-label">Git Branch</span><span class="info-value">{git_info}</span></div>{subagent_info}
         </div>
       </div>
       <div id="messages">{messages_html}</div>
