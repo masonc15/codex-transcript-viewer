@@ -219,6 +219,24 @@ def _handle_response_item(
                 "_turn_seq": turn_seq,
             }
         )
+    elif item_type == "message" and role == "user":
+        content = payload.get("content") or []
+        text = "\n\n".join(
+            _as_text(block.get("text"))
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "input_text"
+        )
+        if text:
+            events.append(
+                {
+                    "type": "user_message",
+                    "ts": ts,
+                    "text": text,
+                    "images": [],
+                    "_source": "response_item",
+                    "_turn_seq": turn_seq,
+                }
+            )
     elif item_type == "message" and role == "assistant":
         content = payload.get("content", [])
         phase = payload.get("phase", "")
@@ -288,11 +306,20 @@ def _normalize_text(value: Any) -> str:
 def _is_response_counterpart(candidate: dict, response_event: dict) -> bool:
     if response_event.get("_source") != "response_item":
         return False
-    if candidate.get("_turn_seq") != response_event.get("_turn_seq"):
+    candidate_turn = candidate.get("_turn_seq")
+    response_turn = response_event.get("_turn_seq")
+    if candidate.get("type") == "user_message":
+        # A user event can precede task_started while its response item follows it.
+        if response_turn not in {candidate_turn, candidate_turn + 1}:
+            return False
+    elif candidate_turn != response_turn:
         return False
 
     candidate_type = candidate.get("type")
-    if candidate_type == "agent_commentary":
+    if candidate_type == "user_message":
+        if response_event.get("type") != "user_message":
+            return False
+    elif candidate_type == "agent_commentary":
         if response_event.get("type") != "assistant_text":
             return False
         if response_event.get("phase") == "final_answer":
@@ -325,7 +352,7 @@ def _find_matching_response_index(
         return None
 
     candidate_type = candidate.get("type")
-    if candidate_type not in {"agent_commentary", "reasoning", "task_complete"}:
+    if candidate_type not in {"user_message", "agent_commentary", "reasoning", "task_complete"}:
         return None
 
     start = max(0, idx - window)
