@@ -65,7 +65,10 @@ def extract_conversation(
         payload = entry.get("payload") or {}
 
         if etype == "session_meta":
-            meta = payload
+            # A forked subagent log also carries its parent's session_meta;
+            # the first record describes this session.
+            if meta is None:
+                meta = payload
             continue
 
         if etype == "event_msg":
