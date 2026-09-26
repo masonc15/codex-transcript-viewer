@@ -74,10 +74,10 @@ class ToolOutputRenderTests(unittest.TestCase):
         event.update(fields)
         return build_html({"id": "s"}, [event])
 
-    def test_image_output_renders_chip_not_base64_text(self) -> None:
+    def test_image_output_renders_as_image_not_base64_text(self) -> None:
         html = self._html(attachments=[{"kind": "image", "data_url": PNG, "bytes": 212_000}])
-        self.assertIn("[image: image output, 212 KB]", html)
-        self.assertNotIn("iVBORw0KGgo", html)
+        self.assertIn(f'<img src="{PNG}"', html)
+        self.assertNotIn(f"<pre>{PNG}", html)
         self.assertIn("output (1 image)", html)
 
     def test_output_text_is_escaped(self) -> None:

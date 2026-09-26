@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .html_builder import build_html
+from .html_builder import DEFAULT_IMAGE_BUDGET_MB, build_html
 from .parser import extract_conversation, parse_jsonl
 
 
@@ -27,6 +27,16 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="show images as labelled placeholders instead of embedding them",
     )
+    parser.add_argument(
+        "--max-image-mb",
+        type=float,
+        default=DEFAULT_IMAGE_BUDGET_MB,
+        metavar="N",
+        help=(
+            "embed tool-output images until they total N MB, then show placeholders "
+            f"(default {DEFAULT_IMAGE_BUDGET_MB}; 0 means no limit). Prompt images are always embedded."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -42,7 +52,12 @@ def main(argv: list[str] | None = None) -> None:
 
     entries = parse_jsonl(inpath)
     meta, events = extract_conversation(entries)
-    html_content = build_html(meta, events, embed_images=not args.no_images)
+    html_content = build_html(
+        meta,
+        events,
+        embed_images=not args.no_images,
+        max_image_mb=args.max_image_mb,
+    )
 
     outpath.write_text(html_content, encoding="utf-8")
     size = outpath.stat().st_size

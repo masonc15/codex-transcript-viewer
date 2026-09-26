@@ -217,6 +217,14 @@ body {
   color: var(--text);
 }
 
+.image-notice {
+  margin-bottom: var(--line-height);
+  padding: 8px var(--line-height);
+  border-left: 3px solid var(--warning);
+  color: var(--muted);
+  font-size: 11px;
+}
+
 /* Messages */
 #messages {
   display: flex;

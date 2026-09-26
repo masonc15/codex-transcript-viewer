@@ -17,11 +17,20 @@ def _load_asset(name: str) -> str:
     return resources.files(__package__).joinpath(name).read_text(encoding="utf-8")
 
 
+DEFAULT_IMAGE_BUDGET_MB = 25
+
+
 @dataclass
 class RenderContext:
     """Options and running state shared by the per-event renderers."""
 
     embed_images: bool = True
+    # Budget for tool-output images, in characters of embedded data URL.
+    # Prompt images are always embedded and do not count against it.
+    image_budget: int = DEFAULT_IMAGE_BUDGET_MB * 1_000_000
+    image_used: int = 0
+    images_omitted: int = 0
+    images_omitted_bytes: int = 0
     outputs_by_call: dict = field(default_factory=dict)
     names_by_call: dict = field(default_factory=dict)
 
@@ -31,9 +40,16 @@ def build_html(
     events: list[dict],
     *,
     embed_images: bool = True,
+    max_image_mb: float = DEFAULT_IMAGE_BUDGET_MB,
 ) -> str:
-    """Build a self-contained HTML string from session metadata and events."""
-    ctx = RenderContext(embed_images=embed_images)
+    """Build a self-contained HTML string from session metadata and events.
+
+    ``max_image_mb`` caps embedded tool-output images per page; 0 means no cap.
+    """
+    ctx = RenderContext(
+        embed_images=embed_images,
+        image_budget=int(max_image_mb * 1_000_000),
+    )
     for evt in events:
         call_id = evt.get("call_id")
         if not call_id:
@@ -106,6 +122,7 @@ def build_html(
         cwd=escape(cwd),
         git_info=escape(branch) + ((" @ " + escape(commit)) if commit else ""),
         subagent_info=_subagent_info_html(meta, events),
+        image_notice=_image_notice_html(ctx),
         generated=generated,
     )
 
@@ -146,6 +163,20 @@ def _subagent_info_html(meta: dict | None, events: list[dict]) -> str:
     return "\n          " + "\n          ".join(rows)
 
 
+def _image_notice_html(ctx: RenderContext) -> str:
+    if not ctx.images_omitted:
+        return ""
+    count = ctx.images_omitted
+    noun = "tool image" if count == 1 else "tool images"
+    size = _format_bytes(ctx.images_omitted_bytes) if ctx.images_omitted_bytes else ""
+    detail = f" ({size})" if size else ""
+    return (
+        f'<div class="image-notice">{count} {noun}{detail} not embedded to keep this page '
+        f"under {ctx.image_budget // 1_000_000} MB of images; rerun with "
+        "<code>--max-image-mb 0</code> to include them.</div>"
+    )
+
+
 def _inherited_run_length(events: list[dict], start: int) -> int:
     end = start
     while end < len(events) and events[end].get("inherited"):
@@ -176,14 +207,31 @@ def _image_label(attachment: dict, default: str) -> str:
     return default
 
 
+def _within_image_budget(url: str, ctx: RenderContext) -> bool:
+    if ctx.image_budget <= 0 or ctx.image_used + len(url) <= ctx.image_budget:
+        ctx.image_used += len(url)
+        return True
+    return False
+
+
 def _render_image(
-    attachment: dict, ctx: RenderContext, *, embed: bool, default_label: str
+    attachment: dict,
+    ctx: RenderContext,
+    *,
+    embed: bool,
+    default_label: str,
+    budgeted: bool = False,
 ) -> str:
     """Render an image attachment as a thumbnail, or as a chip when not embedded."""
     label = _image_label(attachment, default_label)
     url = attachment.get("data_url", "")
     size = attachment.get("bytes")
-    if embed and ctx.embed_images and isinstance(url, str) and _DATA_URL_RE.match(url):
+    embeddable = embed and ctx.embed_images and isinstance(url, str) and bool(_DATA_URL_RE.match(url))
+    if embeddable and budgeted and not _within_image_budget(url, ctx):
+        ctx.images_omitted += 1
+        ctx.images_omitted_bytes += size if isinstance(size, int) else 0
+        embeddable = False
+    if embeddable:
         return (
             '<figure class="attachment-image">'
             f'<img src="{url}" alt="{escape(label)}" loading="lazy" decoding="async" '
@@ -200,13 +248,16 @@ def _render_attachments(
     *,
     embed: bool = True,
     default_label: str = "pasted image",
+    budgeted: bool = False,
 ) -> str:
     parts = []
     for attachment in attachments:
         kind = attachment.get("kind")
         if kind in ("local_image", "image"):
             parts.append(
-                _render_image(attachment, ctx, embed=embed, default_label=default_label)
+                _render_image(
+                    attachment, ctx, embed=embed, default_label=default_label, budgeted=budgeted
+                )
             )
         elif kind == "skill":
             parts.append(f'<span class="attachment-chip">[${escape(attachment.get("name"))}]</span>')
@@ -428,7 +479,7 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages, ctx):
     )
 
     output_images = _render_attachments(
-        attachments, ctx, embed=False, default_label="image output"
+        attachments, ctx, default_label="image output", budgeted=True
     )
     call_name = ctx.names_by_call.get(evt.get("call_id") or "")
     label = f"{escape(call_name)} result" if call_name else "orphan output"
@@ -583,7 +634,7 @@ _HTML_TEMPLATE = """\
           <div class="info-item"><span class="info-label">Git Branch</span><span class="info-value">{git_info}</span></div>{subagent_info}
         </div>
       </div>
-      <div id="messages">{messages_html}</div>
+      {image_notice}<div id="messages">{messages_html}</div>
       <div class="footer">Codex CLI session transcript \u00b7 Generated {generated}</div>
     </main>
   </div>
