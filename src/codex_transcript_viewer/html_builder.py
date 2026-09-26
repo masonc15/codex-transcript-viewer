@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from importlib import resources
 
@@ -22,6 +22,8 @@ class RenderContext:
     """Options and running state shared by the per-event renderers."""
 
     embed_images: bool = True
+    outputs_by_call: dict = field(default_factory=dict)
+    names_by_call: dict = field(default_factory=dict)
 
 
 def build_html(
@@ -32,6 +34,14 @@ def build_html(
 ) -> str:
     """Build a self-contained HTML string from session metadata and events."""
     ctx = RenderContext(embed_images=embed_images)
+    for evt in events:
+        call_id = evt.get("call_id")
+        if not call_id:
+            continue
+        if evt["type"] == "tool_output":
+            ctx.outputs_by_call.setdefault(call_id, evt)
+        elif evt["type"] == "tool_call":
+            ctx.names_by_call.setdefault(call_id, evt.get("name", ""))
     session_id = meta.get("id", "unknown") if meta else "unknown"
     model = meta.get("model_provider", "") if meta else ""
     cli_version = meta.get("cli_version", "") if meta else ""
@@ -323,6 +333,32 @@ def _custom_input_preview(name: str, text: str) -> str:
     return first[:120]
 
 
+def _tool_status(output: dict) -> str:
+    """success, failure or unknown; unknown is never presented as success."""
+    codes = output.get("exit_codes") or []
+    if output.get("failed") is True or any(code != 0 for code in codes):
+        return "failure"
+    if output.get("failed") is False or codes:
+        return "success"
+    return "unknown"
+
+
+def _status_badge(output: dict, status: str) -> str:
+    codes = output.get("exit_codes") or []
+    if len(codes) > 1:
+        failed = sum(1 for code in codes if code != 0)
+        text = f"{len(codes)} commands, {failed} failed"
+    elif codes:
+        text = f"exit {codes[0]}"
+    elif status == "failure":
+        text = "failed"
+    elif status == "success":
+        text = "ok"
+    else:
+        text = "status unknown"
+    return f'<span class="tool-status">{text}</span>'
+
+
 def _render_tool_call(evt, ts, anchor, sidebar, messages, ctx):
     name = evt["name"]
     custom = evt.get("input_kind") in ("custom", "web_search", "tool_search")
@@ -347,10 +383,19 @@ def _render_tool_call(evt, ts, anchor, sidebar, messages, ctx):
         if custom
         else _format_tool_args(evt["arguments"])
     )
+    call_id = evt.get("call_id")
+    if not call_id:
+        # Single-record calls (web search) have no separate result to report.
+        status, badge = "single", ""
+    elif call_id in ctx.outputs_by_call:
+        status = _tool_status(ctx.outputs_by_call[call_id])
+        badge = _status_badge(ctx.outputs_by_call[call_id], status)
+    else:
+        status, badge = "no-result", '<span class="tool-status">no result recorded</span>'
     messages.append(
-        f'<div class="tool-execution pending" id="{anchor}">'
+        f'<div class="tool-execution {status}" id="{anchor}">'
         f'<div class="message-timestamp">{ts}</div>'
-        f'<div class="tool-header"><span class="tool-name">{escape(name)}</span></div>'
+        f'<div class="tool-header"><span class="tool-name">{escape(name)}</span>{badge}</div>'
         f'<div class="tool-args">{args_html}</div>'
         f"</div>"
     )
@@ -367,10 +412,12 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages, ctx):
         count = len(attachments)
         images = f"{count} image" + ("s" if count != 1 else "")
         size_label = f"{size_label}, {images}" if output else images
+    status = _tool_status(evt)
+    marker = " \u2717" if status == "failure" else ""
     sidebar.append(
         f'<a class="tree-node tree-role-tool" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
-        f'<span class="tree-content">\U0001f4e4 output ({size_label})</span></a>'
+        f'<span class="tree-content">\U0001f4e4 output ({size_label}){marker}</span></a>'
     )
 
     expandable_class = " expandable" if truncated else ""
@@ -383,8 +430,12 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages, ctx):
     output_images = _render_attachments(
         attachments, ctx, embed=False, default_label="image output"
     )
+    call_name = ctx.names_by_call.get(evt.get("call_id") or "")
+    label = f"{escape(call_name)} result" if call_name else "orphan output"
     messages.append(
-        f'<div class="tool-execution success" id="{anchor}">'
+        f'<div class="tool-execution {status}" id="{anchor}">'
+        f'<div class="tool-header"><span class="tool-name">{label}</span>'
+        f"{_status_badge(evt, status)}</div>"
         f'<div class="tool-output{expandable_class}" onclick="this.classList.toggle(\'expanded\')">'
         f'<div class="output-preview"><pre>{escape(preview)}{expand_hint}</pre></div>'
         f'<div class="output-full"><pre>{escape(output)}</pre></div>'

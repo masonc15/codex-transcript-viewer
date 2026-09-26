@@ -330,8 +330,21 @@ body {
   border-radius: 4px;
 }
 
-.tool-execution.pending { background: var(--toolPendingBg); }
 .tool-execution.success { background: var(--toolSuccessBg); }
+.tool-execution.failure { background: var(--toolErrorBg); }
+.tool-execution.unknown,
+.tool-execution.no-result,
+.tool-execution.single { background: var(--toolPendingBg); }
+
+.tool-status {
+  margin-left: 8px;
+  font-weight: normal;
+  font-size: 10px;
+  color: var(--dim);
+}
+
+.tool-execution.failure .tool-status { color: var(--error); }
+.tool-execution.success .tool-status { color: var(--success); }
 
 .tool-header { font-weight: bold; margin-bottom: 4px; }
 .tool-name { color: var(--accent); }
