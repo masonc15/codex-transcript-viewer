@@ -311,13 +311,29 @@ def _format_tool_args(arguments):
     return "".join(rows)
 
 
+_CODE_MODE_CALL_RE = re.compile(r"\btools\.[A-Za-z_][A-Za-z0-9_]*\(")
+
+
+def _custom_input_preview(name: str, text: str) -> str:
+    """Sidebar summary for free-form tool input (code-mode exec, apply_patch)."""
+    calls = len(_CODE_MODE_CALL_RE.findall(text))
+    if calls > 1:
+        return f"{calls} tool calls"
+    first = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    return first[:120]
+
+
 def _render_tool_call(evt, ts, anchor, sidebar, messages, ctx):
     name = evt["name"]
-    try:
-        args = json.loads(evt["arguments"])
-        args_preview = _compact_json(args)[:120]
-    except (json.JSONDecodeError, TypeError):
-        args_preview = evt["arguments"][:120]
+    custom = evt.get("input_kind") == "custom"
+    if custom:
+        args_preview = _custom_input_preview(name, evt["arguments"])
+    else:
+        try:
+            args = json.loads(evt["arguments"])
+            args_preview = _compact_json(args)[:120]
+        except (json.JSONDecodeError, TypeError):
+            args_preview = evt["arguments"][:120]
 
     sidebar.append(
         f'<a class="tree-node tree-role-tool" href="#{anchor}">'
@@ -325,11 +341,17 @@ def _render_tool_call(evt, ts, anchor, sidebar, messages, ctx):
         f'<span class="tree-content">\u26a1 {escape(name)}: {escape(args_preview)}</span></a>'
     )
 
+    # Custom tool input is raw text (JavaScript, patches), not JSON parameters.
+    args_html = (
+        f"<pre>{escape(evt['arguments'])}</pre>"
+        if custom
+        else _format_tool_args(evt["arguments"])
+    )
     messages.append(
         f'<div class="tool-execution pending" id="{anchor}">'
         f'<div class="message-timestamp">{ts}</div>'
         f'<div class="tool-header"><span class="tool-name">{escape(name)}</span></div>'
-        f'<div class="tool-args">{_format_tool_args(evt["arguments"])}</div>'
+        f'<div class="tool-args">{args_html}</div>'
         f"</div>"
     )
 

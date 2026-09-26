@@ -535,6 +535,30 @@ def _handle_response_item(
                 "_turn_seq": turn_seq,
             }
         )
+    elif item_type == "custom_tool_call":
+        events.append(
+            {
+                "type": "tool_call",
+                "ts": ts,
+                "name": _as_text(payload.get("name", "")),
+                "arguments": _as_text(payload.get("input", "")),
+                "input_kind": "custom",
+                "call_id": _as_text(payload.get("call_id", "")),
+                "_source": "response_item",
+                "_turn_seq": turn_seq,
+            }
+        )
+    elif item_type == "custom_tool_call_output":
+        events.append(
+            {
+                "type": "tool_output",
+                "ts": ts,
+                "call_id": _as_text(payload.get("call_id", "")),
+                **normalize_tool_output(payload.get("output", "")),
+                "_source": "response_item",
+                "_turn_seq": turn_seq,
+            }
+        )
     elif item_type == "function_call_output":
         events.append(
             {
