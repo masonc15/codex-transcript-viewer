@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -534,6 +535,39 @@ def _web_search_summary(action: Any) -> str:
     return f"{kind}: {_as_text(action)}"
 
 
+def _tool_search_query(arguments: Any) -> str:
+    """tool_search arguments arrive as JSON or as a Python dict repr."""
+    parsed = arguments
+    if isinstance(arguments, str):
+        try:
+            parsed = json.loads(arguments)
+        except json.JSONDecodeError:
+            try:
+                parsed = ast.literal_eval(arguments)
+            except (ValueError, SyntaxError, MemoryError, RecursionError):
+                return arguments
+    if isinstance(parsed, dict) and "query" in parsed:
+        return _as_text(parsed.get("query"))
+    return _as_text(parsed)
+
+
+def _tool_search_names(tools: Any, prefix: str = "") -> list[str]:
+    """Flatten returned tool namespaces into qualified tool names."""
+    names: list[str] = []
+    if not isinstance(tools, list):
+        return names
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        name = _as_text(tool.get("name"))
+        qualified = f"{prefix}.{name}" if prefix and name else name or prefix
+        if isinstance(tool.get("tools"), list):
+            names.extend(_tool_search_names(tool["tools"], qualified))
+        elif qualified:
+            names.append(qualified)
+    return names
+
+
 def _handle_response_item(
     payload: dict[str, Any],
     ts: str,
@@ -578,6 +612,35 @@ def _handle_response_item(
                 "arguments": _web_search_summary(payload.get("action")),
                 "input_kind": "web_search",
                 "call_id": "",
+                "_source": "response_item",
+                "_turn_seq": turn_seq,
+            }
+        )
+    elif item_type == "tool_search_call":
+        events.append(
+            {
+                "type": "tool_call",
+                "ts": ts,
+                "name": "tool_search",
+                "arguments": _tool_search_query(payload.get("arguments")),
+                "input_kind": "tool_search",
+                "call_id": _as_text(payload.get("call_id", "")),
+                "_source": "response_item",
+                "_turn_seq": turn_seq,
+            }
+        )
+    elif item_type == "tool_search_output":
+        names = _tool_search_names(payload.get("tools"))
+        events.append(
+            {
+                "type": "tool_output",
+                "ts": ts,
+                "call_id": _as_text(payload.get("call_id", "")),
+                "output": "\n".join(names) if names else "(no tools returned)",
+                "attachments": [],
+                "exit_codes": [],
+                "failed": None,
+                "duration": None,
                 "_source": "response_item",
                 "_turn_seq": turn_seq,
             }
