@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -85,6 +86,7 @@ def extract_conversation(
             continue
 
     raw_events = _attach_model_input_images(raw_events)
+    raw_events = _apply_exec_status(raw_events)
     reconciled = _reconcile_events(raw_events)
     for event in reconciled:
         if event.get("_turn_seq") in inherited_turns:
@@ -153,6 +155,8 @@ def _handle_event_msg(
         )
     elif msg_type == "item_completed":
         _handle_item_completed(payload, ts, events, turn_seq)
+    elif msg_type in ("exec_command_end", "patch_apply_end"):
+        _handle_exec_end(payload, events)
     elif msg_type == "agent_message":
         events.append(
             {
@@ -448,6 +452,66 @@ def normalize_tool_output(value: Any) -> dict:
         "failed": None,
         "duration": duration,
     }
+
+
+_EXEC_END = "_exec_end"
+_EXIT_HEADER_RE = re.compile(r"^Process exited with code (-?\d+)\s*$")
+_PATCH_FAILED_PREFIX = "apply_patch verification failed"
+
+
+def _handle_exec_end(payload: dict[str, Any], events: list[dict]) -> None:
+    """Record structured exit status, applied to the matching output later."""
+    call_id = payload.get("call_id")
+    if not isinstance(call_id, str) or not call_id:
+        return
+    status: dict[str, Any] = {"type": _EXEC_END, "call_id": call_id}
+    code = _exit_code(payload.get("exit_code"))
+    if code is not None:
+        status["exit_code"] = code
+    success = payload.get("success")
+    if isinstance(success, bool):
+        status["success"] = success
+    duration = payload.get("duration")
+    if isinstance(duration, dict):
+        secs, nanos = duration.get("secs"), duration.get("nanos")
+        if isinstance(secs, (int, float)) and isinstance(nanos, (int, float)):
+            status["duration"] = secs + nanos / 1e9
+    events.append(status)
+
+
+def _header_exit_code(output: str) -> int | None:
+    """Legacy exec outputs state the exit code in their first few header lines."""
+    for line in output.splitlines()[:4]:
+        match = _EXIT_HEADER_RE.match(line)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def _apply_exec_status(events: list[dict]) -> list[dict]:
+    """Attach exit status to tool outputs: end events first, then output headers."""
+    statuses = {e["call_id"]: e for e in events if e.get("type") == _EXEC_END}
+    for event in events:
+        if event.get("type") != "tool_output":
+            continue
+        status = statuses.get(event.get("call_id"))
+        if status is not None:
+            if "exit_code" in status and not event.get("exit_codes"):
+                event["exit_codes"] = [status["exit_code"]]
+            if status.get("success") is False:
+                event["failed"] = True
+            elif status.get("success") is True and event.get("failed") is None:
+                event["failed"] = False
+            if event.get("duration") is None and "duration" in status:
+                event["duration"] = status["duration"]
+        output = event.get("output", "")
+        if not event.get("exit_codes") and event.get("failed") is None:
+            code = _header_exit_code(output)
+            if code is not None:
+                event["exit_codes"] = [code]
+        if output.startswith(_PATCH_FAILED_PREFIX):
+            event["failed"] = True
+    return [e for e in events if e.get("type") != _EXEC_END]
 
 
 def _handle_response_item(
