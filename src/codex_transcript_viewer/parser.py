@@ -514,6 +514,26 @@ def _apply_exec_status(events: list[dict]) -> list[dict]:
     return [e for e in events if e.get("type") != _EXEC_END]
 
 
+def _web_search_summary(action: Any) -> str:
+    if not isinstance(action, dict) or not action:
+        return "(no details recorded)"
+    kind = _as_text(action.get("type")) or "search"
+    if kind == "search":
+        query = _as_text(action.get("query"))
+        queries = action.get("queries")
+        extra = [
+            _as_text(q) for q in queries if _as_text(q) and _as_text(q) != query
+        ] if isinstance(queries, list) else []
+        lines = [f"search: {query}" if query else "search"]
+        lines += [f"  also: {q}" for q in extra]
+        return "\n".join(lines)
+    if kind == "open_page":
+        return f"open_page: {_as_text(action.get('url'))}"
+    if kind == "find_in_page":
+        return f'find_in_page: "{_as_text(action.get("pattern"))}" in {_as_text(action.get("url"))}'
+    return f"{kind}: {_as_text(action)}"
+
+
 def _handle_response_item(
     payload: dict[str, Any],
     ts: str,
@@ -544,6 +564,20 @@ def _handle_response_item(
                 "arguments": _as_text(payload.get("input", "")),
                 "input_kind": "custom",
                 "call_id": _as_text(payload.get("call_id", "")),
+                "_source": "response_item",
+                "_turn_seq": turn_seq,
+            }
+        )
+    elif item_type == "web_search_call":
+        # Single record: no call_id and no separate output.
+        events.append(
+            {
+                "type": "tool_call",
+                "ts": ts,
+                "name": "web_search",
+                "arguments": _web_search_summary(payload.get("action")),
+                "input_kind": "web_search",
+                "call_id": "",
                 "_source": "response_item",
                 "_turn_seq": turn_seq,
             }

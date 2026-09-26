@@ -325,7 +325,7 @@ def _custom_input_preview(name: str, text: str) -> str:
 
 def _render_tool_call(evt, ts, anchor, sidebar, messages, ctx):
     name = evt["name"]
-    custom = evt.get("input_kind") == "custom"
+    custom = evt.get("input_kind") in ("custom", "web_search")
     if custom:
         args_preview = _custom_input_preview(name, evt["arguments"])
     else:
