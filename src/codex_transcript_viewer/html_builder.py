@@ -160,18 +160,20 @@ def _format_bytes(n: int) -> str:
     return f"{max(1, round(n / 1000))} KB"
 
 
-def _image_label(attachment: dict) -> str:
+def _image_label(attachment: dict, default: str) -> str:
     if attachment.get("kind") == "local_image" and attachment.get("path"):
         return _basename(attachment["path"])
-    return "pasted image"
+    return default
 
 
-def _render_image(attachment: dict, ctx: RenderContext) -> str:
+def _render_image(
+    attachment: dict, ctx: RenderContext, *, embed: bool, default_label: str
+) -> str:
     """Render an image attachment as a thumbnail, or as a chip when not embedded."""
-    label = _image_label(attachment)
+    label = _image_label(attachment, default_label)
     url = attachment.get("data_url", "")
     size = attachment.get("bytes")
-    if ctx.embed_images and isinstance(url, str) and _DATA_URL_RE.match(url):
+    if embed and ctx.embed_images and isinstance(url, str) and _DATA_URL_RE.match(url):
         return (
             '<figure class="attachment-image">'
             f'<img src="{url}" alt="{escape(label)}" loading="lazy" decoding="async" '
@@ -182,12 +184,20 @@ def _render_image(attachment: dict, ctx: RenderContext) -> str:
     return f'<span class="attachment-chip">[image: {escape(label)}{detail}]</span>'
 
 
-def _render_attachments(attachments: list[dict], ctx: RenderContext) -> str:
+def _render_attachments(
+    attachments: list[dict],
+    ctx: RenderContext,
+    *,
+    embed: bool = True,
+    default_label: str = "pasted image",
+) -> str:
     parts = []
     for attachment in attachments:
         kind = attachment.get("kind")
         if kind in ("local_image", "image"):
-            parts.append(_render_image(attachment, ctx))
+            parts.append(
+                _render_image(attachment, ctx, embed=embed, default_label=default_label)
+            )
         elif kind == "skill":
             parts.append(f'<span class="attachment-chip">[${escape(attachment.get("name"))}]</span>')
         elif kind == "mention":
@@ -329,10 +339,16 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages, ctx):
     truncated = len(output) > 2000
     preview = output[:2000]
 
+    attachments = evt.get("attachments") or []
+    size_label = f"{len(output)} chars"
+    if attachments:
+        count = len(attachments)
+        images = f"{count} image" + ("s" if count != 1 else "")
+        size_label = f"{size_label}, {images}" if output else images
     sidebar.append(
         f'<a class="tree-node tree-role-tool" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
-        f'<span class="tree-content">\U0001f4e4 output ({len(output)} chars)</span></a>'
+        f'<span class="tree-content">\U0001f4e4 output ({size_label})</span></a>'
     )
 
     expandable_class = " expandable" if truncated else ""
@@ -342,12 +358,15 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages, ctx):
         else ""
     )
 
+    output_images = _render_attachments(
+        attachments, ctx, embed=False, default_label="image output"
+    )
     messages.append(
         f'<div class="tool-execution success" id="{anchor}">'
         f'<div class="tool-output{expandable_class}" onclick="this.classList.toggle(\'expanded\')">'
         f'<div class="output-preview"><pre>{escape(preview)}{expand_hint}</pre></div>'
         f'<div class="output-full"><pre>{escape(output)}</pre></div>'
-        f"</div></div>"
+        f"</div>{output_images}</div>"
     )
 
 

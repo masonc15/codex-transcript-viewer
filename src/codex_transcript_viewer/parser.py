@@ -372,6 +372,84 @@ def _handle_item_completed(
     events.append(event)
 
 
+def _json_object(text: str) -> dict | None:
+    stripped = text.strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return None
+    try:
+        value = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _exit_code(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def normalize_tool_output(value: Any) -> dict:
+    """Split a tool output into display text, image attachments and exit status.
+
+    Outputs come as plain strings, JSON strings wrapping {output, metadata}
+    (apply_patch), or lists of content blocks (images, code-mode exec chunks).
+    Exit codes are read only from structured fields, never searched for in text.
+    """
+    texts: list[str] = []
+    attachments: list[dict] = []
+    exit_codes: list[int] = []
+    duration: float | None = None
+
+    def add_text(text: str) -> None:
+        nonlocal duration
+        obj = _json_object(text)
+        if obj is not None and "output" in obj:
+            texts.append(_as_text(obj.get("output")))
+            code = _exit_code(obj.get("exit_code"))
+            metadata = obj.get("metadata")
+            if isinstance(metadata, dict):
+                code = code if code is not None else _exit_code(metadata.get("exit_code"))
+                seconds = metadata.get("duration_seconds")
+                if isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
+                    duration = float(seconds)
+            if code is not None:
+                exit_codes.append(code)
+            return
+        texts.append(text)
+
+    if isinstance(value, str):
+        add_text(value)
+    elif isinstance(value, list):
+        for block in value:
+            if not isinstance(block, dict):
+                texts.append(_as_text(block))
+                continue
+            kind = block.get("type")
+            if kind in ("input_text", "output_text", "text"):
+                add_text(_as_text(block.get("text")))
+            elif kind == "input_image":
+                url = block.get("image_url")
+                if isinstance(url, dict):
+                    url = url.get("url")
+                if isinstance(url, str) and url.startswith("data:image/"):
+                    attachments.append(
+                        {"kind": "image", "bytes": _data_url_bytes(url), "data_url": url}
+                    )
+                else:
+                    attachments.append({"kind": "image", "bytes": 0})
+            else:
+                texts.append(_as_text(block))
+    else:
+        texts.append(_as_text(value))
+
+    return {
+        "output": "\n".join(t for t in texts if t),
+        "attachments": attachments,
+        "exit_codes": exit_codes,
+        "failed": None,
+        "duration": duration,
+    }
+
+
 def _handle_response_item(
     payload: dict[str, Any],
     ts: str,
@@ -399,7 +477,7 @@ def _handle_response_item(
                 "type": "tool_output",
                 "ts": ts,
                 "call_id": _as_text(payload.get("call_id", "")),
-                "output": _as_text(payload.get("output", "")),
+                **normalize_tool_output(payload.get("output", "")),
                 "_source": "response_item",
                 "_turn_seq": turn_seq,
             }
