@@ -392,6 +392,9 @@ def _exit_code(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+_TRUNCATION_NOTICE = "Warning: truncated output"
+
+
 def normalize_tool_output(value: Any) -> dict:
     """Split a tool output into display text, image attachments and exit status.
 
@@ -406,6 +409,14 @@ def normalize_tool_output(value: Any) -> dict:
 
     def add_text(text: str) -> None:
         nonlocal duration
+        if text.startswith(_TRUNCATION_NOTICE) and "\n{" in text:
+            # Code-mode prefixes an oversized chunk with a notice; the JSON
+            # chunk after it still carries the exit code when it is complete.
+            head, _, tail = text.partition("\n{")
+            if _json_object("{" + tail) is not None:
+                texts.append(head.rstrip())
+                add_text("{" + tail)
+                return
         obj = _json_object(text)
         if obj is not None and "output" in obj:
             texts.append(_as_text(obj.get("output")))

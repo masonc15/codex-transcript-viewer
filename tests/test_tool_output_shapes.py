@@ -52,6 +52,21 @@ class NormalizeToolOutputTests(unittest.TestCase):
                 self.assertIsInstance(normalize_tool_output(value)["output"], str)
 
 
+    def test_exit_code_behind_truncation_notice(self) -> None:
+        text = ("Warning: truncated output (original token count: 21450)\nTotal output lines: 7\n\n"
+                + json.dumps({"chunk_id": "f4", "exit_code": 0, "output": "tail of output"}))
+        out = normalize_tool_output([{"type": "input_text", "text": text}])
+        self.assertEqual(out["exit_codes"], [0])
+        self.assertIn("Warning: truncated output", out["output"])
+        self.assertIn("tail of output", out["output"])
+
+    def test_truncated_invalid_json_stays_text(self) -> None:
+        text = "Warning: truncated output (x)\nTotal output lines: 1\n\n{\"exit_code\": 0, \"output\": \"cut"
+        out = normalize_tool_output([{"type": "input_text", "text": text}])
+        self.assertEqual(out["exit_codes"], [])
+        self.assertEqual(out["output"], text)
+
+
 class ToolOutputRenderTests(unittest.TestCase):
     def _html(self, **fields: object) -> str:
         event = {"type": "tool_output", "ts": "", "call_id": "c", "output": "",
