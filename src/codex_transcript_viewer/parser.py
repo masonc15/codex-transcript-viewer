@@ -277,8 +277,8 @@ def _handle_event_msg(
             }
         )
     elif msg_type == "token_count":
-        info = payload.get("info") or {}
-        total = info.get("total_token_usage", {})
+        info = payload.get("info")
+        total = info.get("total_token_usage") if isinstance(info, dict) else None
         if isinstance(total, dict) and total and _has_positive_usage(total):
             rate_limits = payload.get("rate_limits")
             limit_id = (
@@ -375,7 +375,8 @@ def _review_started_event(payload: dict, ts: str, turn_seq: int) -> dict:
 def _review_finished_event(output: Any, ts: str, turn_seq: int) -> dict:
     output = output if isinstance(output, dict) else {}
     findings = []
-    for finding in output.get("findings") or []:
+    raw_findings = output.get("findings")
+    for finding in raw_findings if isinstance(raw_findings, list) else []:
         if not isinstance(finding, dict):
             continue
         location = finding.get("code_location")
@@ -915,10 +916,10 @@ def _handle_response_item(
     # forked subagents, the parent's history. Typed prompts come from
     # event_msg user_message (CLI <= 0.125) or item_completed UserMessage.
     elif item_type == "message" and role == "assistant":
-        content = payload.get("content", [])
+        content = payload.get("content")
         phase = payload.get("phase", "")
-        for block in content:
-            if block.get("type") == "output_text":
+        for block in content if isinstance(content, list) else []:
+            if isinstance(block, dict) and block.get("type") == "output_text":
                 events.append(
                     {
                         "type": "assistant_text",
@@ -930,10 +931,10 @@ def _handle_response_item(
                     }
                 )
     elif item_type == "reasoning":
-        summary = payload.get("summary", [])
+        summary = payload.get("summary")
         texts = [
             _as_text(s.get("text", ""))
-            for s in summary
+            for s in (summary if isinstance(summary, list) else [])
             if isinstance(s, dict) and s.get("type") == "summary_text"
         ]
         snapshot = [_normalize_text(text) for text in texts]

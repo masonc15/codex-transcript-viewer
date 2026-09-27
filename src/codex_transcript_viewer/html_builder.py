@@ -568,14 +568,19 @@ def _render_thread_rolled_back(evt, ts, anchor, sidebar, messages, ctx):
     )
 
 
+def _token_total(total: dict, key: str) -> int:
+    value = total.get(key)
+    return int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
+
+
 def _render_token_count(evt, ts, anchor, sidebar, messages, ctx):
     total = evt["total"]
-    if total.get("input_tokens", 0) <= 0:
+    if _token_total(total, "input_tokens") <= 0:
         return
     tok_str = (
-        f"in:{total.get('input_tokens',0):,} "
-        f"out:{total.get('output_tokens',0):,} "
-        f"reasoning:{total.get('reasoning_output_tokens',0):,}"
+        f"in:{_token_total(total, 'input_tokens'):,} "
+        f"out:{_token_total(total, 'output_tokens'):,} "
+        f"reasoning:{_token_total(total, 'reasoning_output_tokens'):,}"
     )
     sidebar.append(
         f'<a class="tree-node tree-role-system" href="#{anchor}">'

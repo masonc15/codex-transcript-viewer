@@ -74,5 +74,33 @@ class NullPayloadFieldsTests(unittest.TestCase):
         self.assertNotIn('assistant-message final-answer" id="msg-', html)
 
 
+class WrongTypedFieldsTests(unittest.TestCase):
+    """Shapes a fuzz of every record kind found crashing the parser or builder."""
+
+    def _build(self, *payloads: tuple[str, dict]) -> str:
+        entries = [{"type": "session_meta", "payload": {"id": "s"}}]
+        entries += [{"type": t, "timestamp": "2026-09-27T01:00:00Z", "payload": p} for t, p in payloads]
+        meta, events = extract_conversation(entries)
+        return build_html(meta, events)
+
+    def test_wrong_typed_fields_do_not_crash(self) -> None:
+        cases = [
+            ("response_item", {"type": "message", "role": "assistant", "content": None}),
+            ("response_item", {"type": "message", "role": "assistant", "content": "text"}),
+            ("response_item", {"type": "message", "role": "assistant", "content": ["x", None]}),
+            ("response_item", {"type": "reasoning", "summary": None}),
+            ("event_msg", {"type": "token_count", "info": "x"}),
+            ("event_msg", {"type": "exited_review_mode", "review_output": {"findings": 1}}),
+        ]
+        for record_type, payload in cases:
+            with self.subTest(payload=payload):
+                self._build((record_type, payload))
+
+    def test_token_totals_with_wrong_types_render_as_zero(self) -> None:
+        total = {"input_tokens": 10, "output_tokens": None, "reasoning_output_tokens": "x"}
+        html = self._build(("event_msg", {"type": "token_count", "info": {"total_token_usage": total}}))
+        self.assertIn("in:10 out:0 reasoning:0", html)
+
+
 if __name__ == "__main__":
     unittest.main()
