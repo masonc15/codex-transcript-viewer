@@ -142,10 +142,14 @@ _HANDLED_EVENT_MSG = {
     "item_completed", "exec_command_end", "patch_apply_end",
     "thread_goal_updated", "entered_review_mode", "exited_review_mode", "error",
 }
+# guardian_assessment and collab_* come from one alpha build; the commands and
+# spawn_agent calls they describe are already shown as tool calls.
 _IGNORED_EVENT_MSG = {
     "mcp_tool_call_end", "view_image_tool_call", "web_search_end",
     "context_compacted", "thread_settings_applied", "dynamic_tool_call_request",
-    "dynamic_tool_call_response", "thread_name_updated",
+    "dynamic_tool_call_response", "thread_name_updated", "image_generation_end",
+    "guardian_assessment", "collab_agent_spawn_end", "collab_waiting_end",
+    "collab_close_end", "undo_completed",
 }
 _HANDLED_ITEM_COMPLETED = {"UserMessage", "EnteredReviewMode", "ExitedReviewMode", "HookPrompt"}
 _IGNORED_ITEM_COMPLETED = {
@@ -161,7 +165,7 @@ _HANDLED_RESPONSE_ITEM = {
 _IGNORED_RESPONSE_ITEM = {"ghost_snapshot", "agent_message"}
 _IGNORED_TOP_LEVEL = {
     "token_usage_record", "turn_context", "compacted", "world_state",
-    "inter_agent_communication_metadata",
+    "inter_agent_communication_metadata", "realtime_item",
 }
 
 

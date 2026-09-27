@@ -219,5 +219,21 @@ class ImageGenerationTests(unittest.TestCase):
         self.assertIs(output["failed"], True)
 
 
+class RecordKindTests(unittest.TestCase):
+    def test_new_kinds_are_handled_or_ignored(self) -> None:
+        entries = [
+            _event_msg({"type": kind}) for kind in (
+                "thread_goal_updated", "entered_review_mode", "exited_review_mode", "error",
+                "guardian_assessment", "collab_agent_spawn_end", "collab_waiting_end",
+                "collab_close_end", "undo_completed", "image_generation_end")
+        ] + [
+            _item({"type": kind}) for kind in ("EnteredReviewMode", "ExitedReviewMode", "HookPrompt")
+        ] + [
+            {"type": "realtime_item", "payload": {"type": "realtime_session_started"}},
+            _response_item({"type": "image_generation_call"}),
+        ]
+        self.assertEqual(unrecognized_record_kinds(entries), Counter())
+
+
 if __name__ == "__main__":
     unittest.main()
