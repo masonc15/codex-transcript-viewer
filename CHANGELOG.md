@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- Older sessions no longer show each final answer twice. Codex also logged final answers as commentary, and the viewer kept that copy.
+- The README screenshot shows the current viewer.
+
 ## 0.2.0
 
 It's been a while since I updated this, and Codex has changed a lot in the meantime, so these fixes are long overdue. Newer sessions were missing most of what actually happened.
