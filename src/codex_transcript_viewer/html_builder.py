@@ -590,6 +590,107 @@ def _render_token_count(evt, ts, anchor, sidebar, messages, ctx):
     )
 
 
+def _event_row(anchor, ts, sidebar, messages, *, role, kind, label, title=None, body=""):
+    """A notable session event: sidebar row plus a titled block.
+
+    ``label`` is the sidebar text; ``title`` heads the block and defaults to it.
+    """
+    kind_attr = f' data-kind="{kind}"' if kind else ""
+    sidebar.append(
+        f'<a class="tree-node tree-role-{role}"{kind_attr} href="#{anchor}">'
+        f'<span class="tree-ts">{ts}</span> '
+        f'<span class="tree-content">{escape(label[:120])}</span></a>'
+    )
+    messages.append(
+        f'<div class="session-event {role}-event" id="{anchor}">'
+        f'<div class="message-timestamp">{ts}</div>'
+        f'<div class="event-title">{escape(label if title is None else title)}</div>{body}</div>'
+    )
+
+
+_GOAL_STATUS_LABELS = {
+    "active": "Goal resumed",
+    "complete": "Goal complete",
+    "paused": "Goal paused",
+    "blocked": "Goal blocked",
+    "budgetLimited": "Goal stopped at its budget",
+}
+
+
+def _format_duration(seconds) -> str:
+    minutes, secs = divmod(int(seconds), 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m {secs}s" if minutes else f"{secs}s"
+
+
+def _render_goal_updated(evt, ts, anchor, sidebar, messages, ctx):
+    objective = evt.get("objective", "")
+    status = evt.get("status", "")
+    if evt.get("new_objective"):
+        title = "\U0001f3af Goal set" if status in ("", "active") else f"\U0001f3af Goal ({status})"
+        label = f"{title}: " + objective.replace("\n", " ")
+    else:
+        label = title = "\U0001f3af " + _GOAL_STATUS_LABELS.get(status, f"Goal {status}")
+    usage = []
+    if evt.get("tokens_used"):
+        usage.append(f"{evt['tokens_used']:,} tokens")
+    if evt.get("time_used_seconds"):
+        usage.append(_format_duration(evt["time_used_seconds"]))
+    body = ""
+    if evt.get("new_objective") and objective:
+        body += f'<div class="markdown-content">{render_markdown(objective)}</div>'
+    if usage:
+        body += f'<div class="event-detail">Used so far: {escape(", ".join(usage))}</div>'
+    _event_row(anchor, ts, sidebar, messages, role="event", kind="goal", label=label,
+               title=title, body=body)
+
+
+def _render_review_started(evt, ts, anchor, sidebar, messages, ctx):
+    hint = evt.get("hint") or "code review"
+    _event_row(anchor, ts, sidebar, messages, role="event", kind="review",
+               label=f"\U0001f50d Review started: {hint}")
+
+
+def _render_review_finished(evt, ts, anchor, sidebar, messages, ctx):
+    findings = evt.get("findings") or []
+    count = f"{len(findings)} finding" + ("" if len(findings) == 1 else "s")
+    verdict = evt.get("verdict") or "no verdict"
+    body = ""
+    if evt.get("repeated_by_reply"):
+        body = '<div class="event-detail">The full review is in the reply below.</div>'
+    elif evt.get("explanation"):
+        body += f'<div class="markdown-content">{render_markdown(evt["explanation"])}</div>'
+    if findings and not evt.get("repeated_by_reply"):
+        items = []
+        for finding in findings:
+            where = (
+                f'<div class="event-detail">{escape(finding["location"])}</div>'
+                if finding.get("location") else ""
+            )
+            items.append(
+                f'<li><div class="review-finding-title">{escape(finding.get("title", ""))}</div>'
+                f'{where}<div class="markdown-content">{render_markdown(finding.get("body", ""))}</div></li>'
+            )
+        body += f'<ol class="review-findings">{"".join(items)}</ol>'
+    _event_row(anchor, ts, sidebar, messages, role="event", kind="review",
+               label=f"\U0001f50d Review done: {verdict}, {count}", body=body)
+
+
+def _render_hook_prompt(evt, ts, anchor, sidebar, messages, ctx):
+    hook = f"{evt['hook']} hook" if evt.get("hook") else "Hook"
+    preview = evt["text"].replace("\n", " ")
+    body = f'<div class="markdown-content">{render_markdown(evt["text"])}</div>'
+    _event_row(anchor, ts, sidebar, messages, role="event", kind="hook",
+               label=f"\U0001fa9d {hook}: {preview}", title=f"\U0001fa9d {hook}", body=body)
+
+
+def _render_error(evt, ts, anchor, sidebar, messages, ctx):
+    _event_row(anchor, ts, sidebar, messages, role="error", kind="",
+               label=f"\u26a0 {evt.get('message') or 'Error'}")
+
+
 _EVENT_HANDLERS = {
     "user_message": _render_user_message,
     "reasoning": _render_reasoning,
@@ -602,6 +703,11 @@ _EVENT_HANDLERS = {
     "turn_aborted": _render_turn_aborted,
     "thread_rolled_back": _render_thread_rolled_back,
     "token_count": _render_token_count,
+    "goal_updated": _render_goal_updated,
+    "review_started": _render_review_started,
+    "review_finished": _render_review_finished,
+    "hook_prompt": _render_hook_prompt,
+    "error": _render_error,
 }
 
 

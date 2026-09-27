@@ -89,6 +89,102 @@ class ReasoningSnapshotTests(unittest.TestCase):
         self.assertEqual(texts, ["A", "B"])
 
 
+class GoalTests(unittest.TestCase):
+    def test_counter_only_updates_are_dropped(self) -> None:
+        goals = [
+            e for e in _events(
+                _turn(),
+                _goal("ship it", "active", 0),
+                _goal("ship it", "active", 500),
+                _goal("ship it", "active", 900),
+                _goal("ship it", "complete", 1200),
+                _goal("ship it", "complete", 1300),
+                _goal("next thing", "active", 0),
+            )
+            if e["type"] == "goal_updated"
+        ]
+        self.assertEqual(
+            [(g["status"], g["new_objective"]) for g in goals],
+            [("active", True), ("complete", False), ("active", True)],
+        )
+
+    def test_goal_rows_render(self) -> None:
+        html = _html(_turn(), _goal("ship **it**", "active"), _goal("ship **it**", "budgetLimited", 42))
+        self.assertIn("Goal set: ship **it**", html)
+        self.assertEqual(html.count("<strong>it</strong>"), 1)
+        self.assertIn("Goal stopped at its budget", html)
+        self.assertIn("42 tokens, 1m 30s", html)
+        self.assertIn('data-kind="goal"', html)
+
+
+class ReviewTests(unittest.TestCase):
+    OUTPUT = {
+        "findings": [
+            {
+                "title": "[P1] Popup closes",
+                "body": "Chrome focuses new windows.",
+                "priority": 1,
+                "code_location": {"absolute_file_path": "/r/popup.js",
+                                  "line_range": {"start": 52, "end": 56}},
+            }
+        ],
+        "overall_correctness": "patch is incorrect",
+        "overall_explanation": "One blocker.",
+    }
+
+    def test_modern_review_items(self) -> None:
+        events = _events(
+            _turn(),
+            _item({"type": "EnteredReviewMode", "id": "a", "user_facing_hint": "changes against 'main'"}),
+            _item({"type": "ExitedReviewMode", "id": "b", "review_output": self.OUTPUT}),
+        )
+        started, finished = [e for e in events if e["type"].startswith("review_")]
+        self.assertEqual(started["hint"], "changes against 'main'")
+        self.assertEqual(finished["verdict"], "patch is incorrect")
+        self.assertEqual(finished["findings"][0]["location"], "/r/popup.js:52-56")
+        self.assertNotIn("repeated_by_reply", finished)
+
+    def test_findings_render_when_no_reply_repeats_them(self) -> None:
+        html = _html(
+            _turn(),
+            _event_msg({"type": "entered_review_mode", "prompt": "review current changes"}),
+            _event_msg({"type": "exited_review_mode", "review_output": self.OUTPUT}),
+            _event_msg({"type": "user_message", "message": "fix it"}),
+        )
+        self.assertIn("Review started: review current changes", html)
+        self.assertIn("Review done: patch is incorrect, 1 finding", html)
+        self.assertIn("[P1] Popup closes", html)
+        self.assertIn("/r/popup.js:52-56", html)
+
+    def test_findings_point_to_reply_that_repeats_them(self) -> None:
+        html = _html(
+            _turn(),
+            _event_msg({"type": "exited_review_mode", "review_output": self.OUTPUT}),
+            _response_item({"type": "message", "role": "assistant",
+                            "content": [{"type": "output_text", "text": "Review: popup closes."}]}),
+        )
+        self.assertIn("The full review is in the reply below.", html)
+        self.assertNotIn("Chrome focuses new windows.", html)
+        self.assertNotIn("One blocker.", html)
+
+
+class HookAndErrorTests(unittest.TestCase):
+    def test_hook_prompt_renders(self) -> None:
+        html = _html(
+            _turn(),
+            _item({"type": "HookPrompt", "id": "h", "fragments": [
+                {"text": "YOUR PLAN WAS NOT APPROVED.", "hookRunId": "stop:1:/h/hooks.json"}]}),
+        )
+        self.assertIn("stop hook: YOUR PLAN WAS NOT APPROVED.", html)
+        self.assertIn('data-kind="hook"', html)
+
+    def test_error_renders(self) -> None:
+        html = _html(_turn(), _event_msg({"type": "error", "message": "You've hit your usage limit.",
+                                          "codex_error_info": "usage_limit_exceeded"}))
+        self.assertIn("usage limit", html)
+        self.assertIn("tree-role-error", html)
+
+
 class ImageGenerationTests(unittest.TestCase):
     PNG = "iVBORw0KGgo" + "A" * 400
 

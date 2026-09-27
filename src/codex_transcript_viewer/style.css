@@ -152,6 +152,7 @@ body {
 .tree-role-system .tree-content { color: var(--dim); }
 .tree-role-error .tree-content { color: var(--error); }
 .tree-role-inherited .tree-content { color: var(--dim); font-style: italic; }
+.tree-role-event .tree-content { color: var(--mdHeading); }
 
 /* Main content */
 #content {
@@ -429,6 +430,21 @@ body {
 .error-text {
   color: var(--error);
 }
+
+/* Goals, reviews, hooks and errors */
+.session-event {
+  margin: 8px 0;
+  padding: 8px var(--line-height);
+  border-left: 3px solid var(--mdHeading);
+  background: var(--container-bg);
+}
+.session-event.error-event { border-left-color: var(--error); }
+.event-title { color: var(--mdHeading); font-weight: bold; }
+.error-event .event-title { color: var(--error); }
+.event-detail { color: var(--muted); margin-top: 4px; }
+.review-findings { margin: 6px 0 0 20px; }
+.review-findings li { margin-bottom: 8px; }
+.review-finding-title { font-weight: bold; }
 
 .token-count {
   padding: 2px var(--line-height);

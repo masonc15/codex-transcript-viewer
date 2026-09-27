@@ -90,7 +90,8 @@ def extract_conversation(
     raw_events = _attach_model_input_images(raw_events)
     raw_events = _apply_exec_status(raw_events)
     raw_events = _drop_repeated_reasoning_summaries(raw_events)
-    reconciled = _reconcile_events(raw_events)
+    raw_events = _drop_unchanged_goal_updates(raw_events)
+    reconciled = _mark_reviews_repeated_by_reply(_reconcile_events(raw_events))
     for event in reconciled:
         if event.get("_turn_seq") in inherited_turns:
             event["inherited"] = True
@@ -139,12 +140,14 @@ _HANDLED_EVENT_MSG = {
     "user_message", "agent_message", "agent_reasoning", "task_complete",
     "task_started", "turn_aborted", "token_count", "thread_rolled_back",
     "item_completed", "exec_command_end", "patch_apply_end",
+    "thread_goal_updated", "entered_review_mode", "exited_review_mode", "error",
 }
 _IGNORED_EVENT_MSG = {
     "mcp_tool_call_end", "view_image_tool_call", "web_search_end",
     "context_compacted", "thread_settings_applied", "dynamic_tool_call_request",
     "dynamic_tool_call_response", "thread_name_updated",
 }
+_HANDLED_ITEM_COMPLETED = {"UserMessage", "EnteredReviewMode", "ExitedReviewMode", "HookPrompt"}
 _IGNORED_ITEM_COMPLETED = {
     "AgentMessage", "CommandExecution", "Reasoning", "FileChange", "McpToolCall",
     "WebSearch", "Extension", "Plan", "ContextCompaction", "SubAgentActivity",
@@ -177,7 +180,7 @@ def unrecognized_record_kinds(entries: list[dict]) -> Counter:
             if subtype == "item_completed":
                 item = payload.get("item")
                 kind = item.get("type") if isinstance(item, dict) else None
-                if kind != "UserMessage" and kind not in _IGNORED_ITEM_COMPLETED:
+                if kind not in _HANDLED_ITEM_COMPLETED and kind not in _IGNORED_ITEM_COMPLETED:
                     unknown[f"item_completed/{kind}"] += 1
             elif subtype not in _HANDLED_EVENT_MSG and subtype not in _IGNORED_EVENT_MSG:
                 unknown[f"event_msg/{subtype}"] += 1
@@ -300,6 +303,120 @@ def _handle_event_msg(
                 "_turn_seq": turn_seq,
             }
         )
+    elif msg_type == "thread_goal_updated":
+        goal = payload.get("goal")
+        if isinstance(goal, dict):
+            events.append(_goal_event(goal, ts, turn_seq))
+    elif msg_type == "entered_review_mode":
+        events.append(_review_started_event(payload, ts, turn_seq))
+    elif msg_type == "exited_review_mode":
+        events.append(_review_finished_event(payload.get("review_output"), ts, turn_seq))
+    elif msg_type == "error":
+        events.append(
+            {
+                "type": "error",
+                "ts": ts,
+                "message": _as_text(payload.get("message")),
+                "_source": "event_msg",
+                "_turn_seq": turn_seq,
+            }
+        )
+
+
+def _goal_event(goal: dict, ts: str, turn_seq: int) -> dict:
+    tokens = goal.get("tokensUsed")
+    seconds = goal.get("timeUsedSeconds")
+    return {
+        "type": "goal_updated",
+        "ts": ts,
+        "objective": _as_text(goal.get("objective")),
+        "status": _as_text(goal.get("status")),
+        "tokens_used": tokens if isinstance(tokens, int) else None,
+        "time_used_seconds": seconds if isinstance(seconds, (int, float)) else None,
+        "_source": "event_msg",
+        "_turn_seq": turn_seq,
+    }
+
+
+def _drop_unchanged_goal_updates(events: list[dict]) -> list[dict]:
+    """Keep goal updates that set a goal or change its status.
+
+    Codex logs the goal again after almost every step to update its token and
+    time counters; one session has 2,477 updates and six real changes.
+    """
+    kept = []
+    last: tuple[str, str] | None = None
+    for event in events:
+        if event.get("type") == "goal_updated":
+            key = (event["objective"], event["status"])
+            if key == last:
+                continue
+            event["new_objective"] = last is None or last[0] != event["objective"]
+            last = key
+        kept.append(event)
+    return kept
+
+
+def _review_started_event(payload: dict, ts: str, turn_seq: int) -> dict:
+    hint = _as_text(payload.get("user_facing_hint")) or _as_text(payload.get("prompt"))
+    return {
+        "type": "review_started",
+        "ts": ts,
+        "hint": hint,
+        "_source": "event_msg",
+        "_turn_seq": turn_seq,
+    }
+
+
+def _review_finished_event(output: Any, ts: str, turn_seq: int) -> dict:
+    output = output if isinstance(output, dict) else {}
+    findings = []
+    for finding in output.get("findings") or []:
+        if not isinstance(finding, dict):
+            continue
+        location = finding.get("code_location")
+        where = ""
+        if isinstance(location, dict):
+            where = _as_text(location.get("absolute_file_path"))
+            lines = location.get("line_range")
+            if where and isinstance(lines, dict) and isinstance(lines.get("start"), int):
+                start, end = lines["start"], lines.get("end")
+                where += f":{start}" + (f"-{end}" if isinstance(end, int) and end != start else "")
+        findings.append(
+            {
+                "title": _as_text(finding.get("title")),
+                "body": _as_text(finding.get("body")),
+                "location": where,
+            }
+        )
+    return {
+        "type": "review_finished",
+        "ts": ts,
+        "verdict": _as_text(output.get("overall_correctness")),
+        "explanation": _as_text(output.get("overall_explanation")),
+        "findings": findings,
+        "_source": "event_msg",
+        "_turn_seq": turn_seq,
+    }
+
+
+def _mark_reviews_repeated_by_reply(events: list[dict]) -> list[dict]:
+    """Flag reviews whose findings an assistant message right after them repeats.
+
+    Codex usually writes the review as an assistant message too; the earliest
+    review versions went straight back to the model, so the findings are only
+    in the review record.
+    """
+    for idx, event in enumerate(events):
+        if event.get("type") != "review_finished":
+            continue
+        for later in events[idx + 1:]:
+            if later.get("type") in ("user_message", "task_started"):
+                break
+            if later.get("type") in ("assistant_text", "agent_commentary"):
+                event["repeated_by_reply"] = True
+                break
+    return events
 
 
 def _legacy_image_attachments(local_images: list) -> list[dict]:
@@ -388,13 +505,24 @@ def _handle_item_completed(
     events: list[dict],
     turn_seq: int,
 ) -> None:
-    """Read typed prompts from CLI 0.135+ sessions.
+    """Read typed prompts from CLI 0.135+ sessions, plus review and hook items.
 
-    Only UserMessage items are used. The other item kinds duplicate
-    response_item records that are already parsed.
+    The other item kinds duplicate response_item records that are already parsed.
     """
     item = payload.get("item")
-    if not isinstance(item, dict) or item.get("type") != "UserMessage":
+    if not isinstance(item, dict):
+        return
+    kind = item.get("type")
+    if kind == "EnteredReviewMode":
+        events.append(_review_started_event(item, ts, turn_seq))
+        return
+    if kind == "ExitedReviewMode":
+        events.append(_review_finished_event(item.get("review_output"), ts, turn_seq))
+        return
+    if kind == "HookPrompt":
+        _handle_hook_prompt(item, ts, events, turn_seq)
+        return
+    if kind != "UserMessage":
         return
     content = item.get("content")
     if not isinstance(content, list):
@@ -434,6 +562,35 @@ def _handle_item_completed(
     if isinstance(client_id, str) and client_id:
         event["client_id"] = client_id
     events.append(event)
+
+
+def _handle_hook_prompt(item: dict, ts: str, events: list[dict], turn_seq: int) -> None:
+    """Text a hook sent to the model; otherwise it is only in the model's input."""
+    fragments = item.get("fragments")
+    if not isinstance(fragments, list):
+        return
+    texts, hooks = [], []
+    for fragment in fragments:
+        if not isinstance(fragment, dict):
+            continue
+        text = _as_text(fragment.get("text")).strip()
+        if text:
+            texts.append(text)
+        # hookRunId looks like "stop:1:/path/to/hooks.json".
+        hook = _as_text(fragment.get("hookRunId")).split(":", 1)[0]
+        if hook and hook not in hooks:
+            hooks.append(hook)
+    if texts:
+        events.append(
+            {
+                "type": "hook_prompt",
+                "ts": ts,
+                "text": "\n\n".join(texts),
+                "hook": ", ".join(hooks),
+                "_source": "event_msg",
+                "_turn_seq": turn_seq,
+            }
+        )
 
 
 def _json_object(text: str) -> dict | None:
