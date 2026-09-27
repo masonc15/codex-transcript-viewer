@@ -486,12 +486,16 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages, ctx):
         f'<span class="tree-content">\U0001f4e4 output ({size_label}){marker}</span></a>'
     )
 
-    expandable_class = " expandable" if truncated else ""
-    expand_hint = (
-        f'\n<span class="expand-hint">[click to expand {len(output)} chars]</span>'
-        if truncated
-        else ""
-    )
+    if truncated:
+        # A long output shows its first 2,000 characters until clicked.
+        body = (
+            '<div class="tool-output expandable" onclick="this.classList.toggle(\'expanded\')">'
+            f'<div class="output-preview"><pre>{escape(preview)}\n'
+            f'<span class="expand-hint">[click to expand {len(output)} chars]</span></pre></div>'
+            f'<div class="output-full"><pre>{escape(shown)}{escape(omitted)}</pre></div></div>'
+        )
+    else:
+        body = f'<div class="tool-output"><pre>{escape(shown)}{escape(omitted)}</pre></div>'
 
     output_images = _render_attachments(
         attachments, ctx, default_label="image output", budgeted=True
@@ -502,10 +506,7 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages, ctx):
         f'<div class="tool-execution {status}" id="{anchor}">'
         f'<div class="tool-header"><span class="tool-name">{label}</span>'
         f"{_status_badge(evt, status)}</div>"
-        f'<div class="tool-output{expandable_class}" onclick="this.classList.toggle(\'expanded\')">'
-        f'<div class="output-preview"><pre>{escape(preview)}{expand_hint}</pre></div>'
-        f'<div class="output-full"><pre>{escape(shown)}{escape(omitted)}</pre></div>'
-        f"</div>{output_images}</div>"
+        f"{body}{output_images}</div>"
     )
 
 

@@ -33,5 +33,19 @@ class OutputCapTests(unittest.TestCase):
         self.assertIn("[50,000 characters omitted]", _html("z" * 300_000))
 
 
+class OutputShownOnceTests(unittest.TestCase):
+    def test_short_output_is_rendered_once(self) -> None:
+        html = _html("12 passed in 0.34s")
+        self.assertEqual(html.count("12 passed in 0.34s"), 1)
+        self.assertNotIn('class="output-preview"', html)
+
+    def test_long_output_has_preview_and_full_copy(self) -> None:
+        html = _html("line\n" * 1000)
+        self.assertIn('class="tool-output expandable"', html)
+        self.assertIn("output-preview", html)
+        self.assertIn("output-full", html)
+        self.assertIn("[click to expand 5000 chars]", html)
+
+
 if __name__ == "__main__":
     unittest.main()
