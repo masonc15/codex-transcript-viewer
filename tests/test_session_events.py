@@ -258,6 +258,14 @@ class MemoryCitationRenderTests(unittest.TestCase):
         self.assertIn('<span class="citation-location">MEMORY.md:1-2</span> \u2014 why', html)
 
 
+class ReasoningMarkdownTests(unittest.TestCase):
+    def test_reasoning_renders_markdown(self) -> None:
+        html = _html(_turn(), _reasoning("**Planning the CSV writer**\n\nUse `csv.writer`."))
+        self.assertIn("<strong>Planning the CSV writer</strong>", html)
+        self.assertIn("<code>csv.writer</code>", html)
+        self.assertIn("\U0001f4ad Planning the CSV writer", html)
+
+
 class RecordKindTests(unittest.TestCase):
     def test_new_kinds_are_handled_or_ignored(self) -> None:
         entries = [

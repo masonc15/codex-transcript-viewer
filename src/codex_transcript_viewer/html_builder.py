@@ -317,12 +317,12 @@ def _render_reasoning(evt, ts, anchor, sidebar, messages, ctx):
     sidebar.append(
         f'<a class="tree-node tree-role-thinking" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
-        f'<span class="tree-content">\U0001f4ad {escape(evt["text"][:60])}</span></a>'
+        f'<span class="tree-content">\U0001f4ad {escape(evt["text"].replace("**", "")[:60])}</span></a>'
     )
     messages.append(
         f'<div class="thinking-block" id="{anchor}">'
         f'<div class="message-timestamp">{ts}</div>'
-        f'<div class="thinking-text">{escape(evt["text"])}</div>'
+        f'<div class="thinking-text markdown-content">{render_markdown(evt["text"])}</div>'
         f"</div>"
     )
 
