@@ -87,7 +87,9 @@ def render_markdown(text: str) -> str:
     # Restore parked markup; link text may itself hold parked inline code.
     while _SLOT_RE.search(escaped):
         escaped = _SLOT_RE.sub(lambda m: slots[int(m.group(1))], escaped)
-    return escaped
+    # A code block has its own margins, so the line breaks around it only add gaps;
+    # a paragraph break after one would otherwise render as an extra blank line.
+    return re.sub(r"\n?(<pre><code[^>]*>.*?</code></pre>)\n{0,2}", r"\1", escaped, flags=re.S)
 
 
 def _code_block(lang: str, escaped_code: str) -> str:

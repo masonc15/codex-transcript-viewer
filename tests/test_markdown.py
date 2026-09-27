@@ -155,6 +155,12 @@ class HighlightTests(unittest.TestCase):
         self.assertNotIn("<b>", html)
 
 
+class CodeBlockSpacingTests(unittest.TestCase):
+    def test_line_breaks_around_code_blocks_are_dropped(self) -> None:
+        html = render_markdown("Before:\n\n```\nx\n```\n\nAfter")
+        self.assertEqual(html, 'Before:\n<pre><code class="language-">x\n</code></pre>After')
+
+
 class MemoryCitationTests(unittest.TestCase):
     BLOCK = (
         "<oai-mem-citation>\n<citation_entries>\n"
