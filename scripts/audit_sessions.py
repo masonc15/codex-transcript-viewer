@@ -133,6 +133,7 @@ def raw_texts_by_turn(entries: list) -> dict[int, dict[str, list[str]]]:
     marks with "Turn started".
     """
     turns: dict[int, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+    snapshots: dict[int, list[str]] = {}
     turn = 0
     for entry in entries:
         if not isinstance(entry, dict):
@@ -168,9 +169,18 @@ def raw_texts_by_turn(entries: list) -> dict[int, dict[str, list[str]]]:
                         texts[f"assistant.response.{phase}"].append(normalize(block.get("text")))
             elif kind == "reasoning":
                 summary = payload.get("summary") if isinstance(payload.get("summary"), list) else []
-                for block in summary:
-                    if isinstance(block, dict) and block.get("type") == "summary_text":
-                        texts["reasoning.response"].append(normalize(block.get("text")))
+                parts = [normalize(block.get("text")) for block in summary
+                         if isinstance(block, dict) and block.get("type") == "summary_text"]
+                # Newer models restate the turn's summary so far before adding
+                # to it; only the parts after that restatement are new.
+                before = snapshots.get(turn) or []
+                if parts:
+                    if before and parts[: len(before)] == before:
+                        parts_new = parts[len(before):]
+                    else:
+                        parts_new = parts
+                    snapshots[turn] = parts
+                    texts["reasoning.response"].extend(parts_new)
     return {
         turn: {kind: [t for t in values if t] for kind, values in kinds.items()}
         for turn, kinds in turns.items()

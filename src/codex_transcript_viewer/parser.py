@@ -89,6 +89,7 @@ def extract_conversation(
 
     raw_events = _attach_model_input_images(raw_events)
     raw_events = _apply_exec_status(raw_events)
+    raw_events = _drop_repeated_reasoning_summaries(raw_events)
     reconciled = _reconcile_events(raw_events)
     for event in reconciled:
         if event.get("_turn_seq") in inherited_turns:
@@ -769,20 +770,52 @@ def _handle_response_item(
                 )
     elif item_type == "reasoning":
         summary = payload.get("summary", [])
-        for s in summary:
-            if s.get("type") == "summary_text":
-                events.append(
-                    {
-                        "type": "reasoning",
-                        "ts": ts,
-                        "text": _as_text(s.get("text", "")),
-                        "_source": "response_item",
-                        "_turn_seq": turn_seq,
-                    }
-                )
-
+        texts = [
+            _as_text(s.get("text", ""))
+            for s in summary
+            if isinstance(s, dict) and s.get("type") == "summary_text"
+        ]
+        snapshot = [_normalize_text(text) for text in texts]
+        for index, text in enumerate(texts):
+            events.append(
+                {
+                    "type": "reasoning",
+                    "ts": ts,
+                    "text": text,
+                    "_summary": snapshot,
+                    "_summary_index": index,
+                    "_source": "response_item",
+                    "_turn_seq": turn_seq,
+                }
+            )
 
 _TOOL_EVENT_TYPES = {"tool_call", "tool_output"}
+
+
+def _drop_repeated_reasoning_summaries(events: list[dict]) -> list[dict]:
+    """Show each reasoning summary heading once per turn.
+
+    Newer models often start a turn's next reasoning item with the whole
+    summary logged so far, then add new parts: ["A"], ["A", "B"], ["A", "B"].
+    When an item's summary starts with the previous item's full summary, only
+    the parts after it are new. Summaries never carry over between turns.
+    """
+    kept: list[dict] = []
+    previous: dict[Any, list[str]] = {}
+    repeated = 0
+    for event in events:
+        snapshot = event.get("_summary")
+        if snapshot is None:
+            kept.append(event)
+            continue
+        turn = event.get("_turn_seq")
+        if event.get("_summary_index") == 0:
+            before = previous.get(turn) or []
+            repeated = len(before) if before and snapshot[: len(before)] == before else 0
+            previous[turn] = snapshot
+        if event["_summary_index"] >= repeated:
+            kept.append(event)
+    return kept
 
 
 def _merge_adjacent_token_events(events: list[dict]) -> list[dict]:
