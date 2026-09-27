@@ -1,0 +1,57 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run the tests
+        run: python -m unittest discover -s tests -v
+        env:
+          PYTHONPATH: src
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Build the sdist and wheel
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build
+          python -m twine check dist/*
+      - name: Install the wheel and convert a session
+        run: |
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install dist/*.whl
+          cat > /tmp/session.jsonl <<'JSONL'
+          {"type":"session_meta","timestamp":"2026-01-01T00:00:00Z","payload":{"id":"smoke-test","cli_version":"0.155.0"}}
+          {"type":"event_msg","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"task_started","turn_id":"t1"}}
+          {"type":"event_msg","timestamp":"2026-01-01T00:00:02Z","payload":{"type":"user_message","message":"hello"}}
+          {"type":"response_item","timestamp":"2026-01-01T00:00:03Z","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"| a | b |\n|---|---|\n| 1 | 2 |"}]}}
+          JSONL
+          /tmp/venv/bin/codex-transcript-viewer /tmp/session.jsonl /tmp/out.html
+          grep -q '<table class="md-table">' /tmp/out.html
+          grep -q 'hello' /tmp/out.html
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
