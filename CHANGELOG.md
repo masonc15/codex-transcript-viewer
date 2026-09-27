@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- The viewer is on PyPI: `uv tool install codex-transcript-viewer`, `pipx install codex-transcript-viewer`, or `uvx codex-transcript-viewer <session.jsonl>` to run it once.
+- Markdown tables render as tables, and links work. Web links open in a new tab; links to local files show their label, with the full path on hover. Bare `https://` addresses become links too.
+- Formatting no longer leaks into code: `**` inside a code block stays as written.
+- Sessions with malformed records no longer crash the parser. A fuzz of every record type turned up ten such spots.
+- Tests run on GitHub Actions for Python 3.11 through 3.14.
+
 ## 0.3.0
 
 - Goals set with `/goal` show up, with their objective and each status change (complete, paused, blocked, out of budget). Codex logs the goal again after nearly every step, so only real changes are kept.
