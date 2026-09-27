@@ -87,10 +87,26 @@ def extract_conversation(
             _handle_response_item(payload, ts, raw_events, turn_seq)
             continue
 
+        if etype == "turn_context":
+            model = _as_text(payload.get("model"))
+            if model:
+                raw_events.append(
+                    {
+                        "type": "turn_settings",
+                        "ts": ts,
+                        "model": model,
+                        "effort": _as_text(payload.get("effort") or payload.get("reasoning_effort")),
+                        "_source": "turn_context",
+                        "_turn_seq": turn_seq,
+                    }
+                )
+            continue
+
     raw_events = _attach_model_input_images(raw_events)
     raw_events = _apply_exec_status(raw_events)
     raw_events = _drop_repeated_reasoning_summaries(raw_events)
     raw_events = _drop_unchanged_goal_updates(raw_events)
+    raw_events = _keep_turn_settings_changes(raw_events)
     reconciled = _mark_reviews_repeated_by_reply(_reconcile_events(raw_events))
     for event in reconciled:
         if event.get("_turn_seq") in inherited_turns:
@@ -163,8 +179,9 @@ _HANDLED_RESPONSE_ITEM = {
     "tool_search_output", "message", "reasoning", "image_generation_call",
 }
 _IGNORED_RESPONSE_ITEM = {"ghost_snapshot", "agent_message"}
+_HANDLED_TOP_LEVEL = {"session_meta", "event_msg", "response_item", "turn_context"}
 _IGNORED_TOP_LEVEL = {
-    "token_usage_record", "turn_context", "compacted", "world_state",
+    "token_usage_record", "compacted", "world_state",
     "inter_agent_communication_metadata", "realtime_item",
 }
 
@@ -191,7 +208,7 @@ def unrecognized_record_kinds(entries: list[dict]) -> Counter:
         elif etype == "response_item":
             if subtype not in _HANDLED_RESPONSE_ITEM and subtype not in _IGNORED_RESPONSE_ITEM:
                 unknown[f"response_item/{subtype}"] += 1
-        elif etype not in _IGNORED_TOP_LEVEL:
+        elif etype not in _HANDLED_TOP_LEVEL and etype not in _IGNORED_TOP_LEVEL:
             unknown[str(etype)] += 1
     return unknown
 
@@ -356,6 +373,27 @@ def _drop_unchanged_goal_updates(events: list[dict]) -> list[dict]:
             if key == last:
                 continue
             event["new_objective"] = last is None or last[0] != event["objective"]
+            last = key
+        kept.append(event)
+    return kept
+
+
+def _keep_turn_settings_changes(events: list[dict]) -> list[dict]:
+    """Keep the first turn's model and effort, then only turns that change them.
+
+    Codex records both at the start of every turn; most sessions never change.
+    """
+    kept = []
+    last: tuple[str, str] | None = None
+    for event in events:
+        if event.get("type") == "turn_settings":
+            key = (event["model"], event["effort"])
+            if key == last:
+                continue
+            if last is None:
+                event["first"] = True
+            else:
+                event["previous_model"], event["previous_effort"] = last
             last = key
         kept.append(event)
     return kept

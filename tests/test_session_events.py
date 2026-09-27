@@ -219,6 +219,34 @@ class ImageGenerationTests(unittest.TestCase):
         self.assertIs(output["failed"], True)
 
 
+class TurnSettingsTests(unittest.TestCase):
+    def _context(self, model: str, effort: str) -> dict:
+        return {"type": "turn_context", "timestamp": "2026-09-27T01:00:00Z",
+                "payload": {"model": model, "effort": effort, "cwd": "/x"}}
+
+    def test_only_changes_are_kept_and_header_shows_first_model(self) -> None:
+        entries = [
+            _turn(), self._context("gpt-5.6-sol", "high"),
+            _turn(), self._context("gpt-5.6-sol", "high"),
+            _turn(), self._context("gpt-6-astra", "high"),
+            _turn(), self._context("gpt-6-astra", "xhigh"),
+        ]
+        settings = [e for e in _events(*entries) if e["type"] == "turn_settings"]
+        self.assertEqual([(s["model"], s["effort"]) for s in settings],
+                         [("gpt-5.6-sol", "high"), ("gpt-6-astra", "high"), ("gpt-6-astra", "xhigh")])
+        html = _html(*entries)
+        self.assertIn('<span class="info-value">gpt-5.6-sol (high effort)</span>', html)
+        self.assertIn("Switched model gpt-5.6-sol \u2192 gpt-6-astra", html)
+        self.assertIn("Switched effort high \u2192 xhigh", html)
+        self.assertIn('data-kind="settings"', html)
+
+    def test_header_falls_back_to_provider(self) -> None:
+        meta, events = extract_conversation(
+            [{"type": "session_meta", "payload": {"id": "s", "model_provider": "openai"}}, _turn()]
+        )
+        self.assertIn('<span class="info-value">openai</span>', build_html(meta, events))
+
+
 class RecordKindTests(unittest.TestCase):
     def test_new_kinds_are_handled_or_ignored(self) -> None:
         entries = [
@@ -230,6 +258,7 @@ class RecordKindTests(unittest.TestCase):
             _item({"type": kind}) for kind in ("EnteredReviewMode", "ExitedReviewMode", "HookPrompt")
         ] + [
             {"type": "realtime_item", "payload": {"type": "realtime_session_started"}},
+            {"type": "turn_context", "payload": {"model": "m"}},
             _response_item({"type": "image_generation_call"}),
         ]
         self.assertEqual(unrecognized_record_kinds(entries), Counter())

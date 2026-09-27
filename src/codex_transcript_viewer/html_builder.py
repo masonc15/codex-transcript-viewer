@@ -66,7 +66,7 @@ def build_html(
         elif evt["type"] == "tool_call":
             ctx.names_by_call.setdefault(call_id, evt.get("name", ""))
     session_id = meta.get("id", "unknown") if meta else "unknown"
-    model = meta.get("model_provider", "") if meta else ""
+    model = _session_model(meta, events)
     cli_version = meta.get("cli_version", "") if meta else ""
     cwd = meta.get("cwd", "") if meta else ""
     branch = meta.get("git", {}).get("branch", "") if meta else ""
@@ -132,6 +132,19 @@ def build_html(
         image_notice=_image_notice_html(ctx),
         generated=generated,
     )
+
+
+def _session_model(meta: dict | None, events: list[dict]) -> str:
+    """The first turn's model and effort, falling back to the provider name.
+
+    A forked subagent's copied parent turns come first, so its own turns win.
+    """
+    settings = [e for e in events if e.get("type") == "turn_settings"]
+    first = next((e for e in settings if not e.get("inherited")), settings[0] if settings else None)
+    if first:
+        effort = f" ({first['effort']} effort)" if first.get("effort") else ""
+        return first["model"] + effort
+    return meta.get("model_provider", "") if meta else ""
 
 
 def _subagent_info_html(meta: dict | None, events: list[dict]) -> str:
@@ -692,6 +705,30 @@ def _render_hook_prompt(evt, ts, anchor, sidebar, messages, ctx):
                label=f"\U0001fa9d {hook}: {preview}", title=f"\U0001fa9d {hook}", body=body)
 
 
+def _render_turn_settings(evt, ts, anchor, sidebar, messages, ctx):
+    effort = evt.get("effort")
+    if evt.get("first"):
+        label = f"\u2699 {evt['model']}" + (f", {effort} effort" if effort else "")
+        sidebar.append(
+            f'<a class="tree-node tree-role-system" href="#{anchor}">'
+            f'<span class="tree-ts">{ts}</span> '
+            f'<span class="tree-content">{escape(label)}</span></a>'
+        )
+        messages.append(
+            f'<div class="system-event" id="{anchor}">'
+            f'<div class="message-timestamp">{ts}</div>'
+            f'<span class="event-label">{escape(label)}</span></div>'
+        )
+        return
+    changes = []
+    if evt["model"] != evt.get("previous_model"):
+        changes.append(f"model {evt.get('previous_model')} \u2192 {evt['model']}")
+    if effort != evt.get("previous_effort"):
+        changes.append(f"effort {evt.get('previous_effort') or 'default'} \u2192 {effort or 'default'}")
+    _event_row(anchor, ts, sidebar, messages, role="event", kind="settings",
+               label="\u2699 Switched " + ", ".join(changes))
+
+
 def _render_error(evt, ts, anchor, sidebar, messages, ctx):
     _event_row(anchor, ts, sidebar, messages, role="error", kind="",
                label=f"\u26a0 {evt.get('message') or 'Error'}")
@@ -714,6 +751,7 @@ _EVENT_HANDLERS = {
     "review_finished": _render_review_finished,
     "hook_prompt": _render_hook_prompt,
     "error": _render_error,
+    "turn_settings": _render_turn_settings,
 }
 
 
