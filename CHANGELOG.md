@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2
+
+- 0.2.1 only fixed some of the doubled final answers. Older sessions also log a final answer without its memory citations or proposed plan, and those copies still showed as commentary. They're gone now, along with a doubled last message in older and plan-mode turns.
+- `scripts/audit_sessions.py` checks the viewer against real sessions for duplicated or missing entries, and `scripts/visual_review.py` screenshots one session per format. Run over about 8,500 sessions, both come back clean.
+
 ## 0.2.1
 
 - Older sessions no longer show each final answer twice. Codex also logged final answers as commentary, and the viewer kept that copy.
