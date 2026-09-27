@@ -10,7 +10,8 @@ format the archive contains gets looked at before a release.
 
 For each session this writes <name>-sidebar-N.png tiles covering the first
 --rows sidebar entries, and prints any turn where two message entries carry the
-same text in the rendered page. A repeat between two kinds of entry in the
+same text in the rendered page, plus any tool output that shows two visible
+copies of its text. A repeat between two kinds of entry in the
 same role (commentary and a final answer, say) is how an event_msg copy
 slipping past dedup looks, and fails the run. Other repeats are listed for the
 reviewer: within one kind it is usually the model repeating itself, and across
@@ -66,6 +67,9 @@ FIND_REPEATS = """
     }
     seen.set(text, kind);
   }
+  // A tool output must show one block of text; two visible copies is a render bug.
+  const doubled = [...document.querySelectorAll('.tool-output')].filter(out =>
+    [...out.querySelectorAll('pre')].filter(pre => pre.offsetParent !== null).length > 1).length;
   // Let the entry list grow to its full height so it can be screenshotted.
   const sidebar = document.getElementById('sidebar');
   sidebar.style.position = 'static';
@@ -75,7 +79,7 @@ FIND_REPEATS = """
   tree.style.overflow = 'visible';
   tree.style.flex = 'none';
   nodes.filter(n => n.style.display !== 'none').slice(maxRows).forEach(n => n.style.display = 'none');
-  return {rows: nodes.length, repeats};
+  return {rows: nodes.length, repeats, doubled};
 }
 """
 
@@ -141,7 +145,9 @@ def main(argv: list[str] | None = None) -> int:
                 page.set_viewport_size({"width": 1440, "height": 900})
 
             cross = [r for r in result["repeats"] if r["cross"]]
-            found += len(cross)
+            found += len(cross) + result["doubled"]
+            if result["doubled"]:
+                print(f"   {result['doubled']} tool outputs show their text twice")
             print(f"== {session.name}: {result['rows']} sidebar rows, {len(tiles)} tiles in {args.out}")
             print(f"   {len(cross)} repeats between entry kinds in one role, "
                   f"{len(result['repeats']) - len(cross)} other repeats")
