@@ -5,6 +5,8 @@ from __future__ import annotations
 import html
 import re
 
+from .highlight import highlight
+
 
 def escape(text: str | None) -> str:
     """HTML-escape text, returning empty string for None."""
@@ -40,12 +42,7 @@ def render_markdown(text: str) -> str:
     escaped = escape(text)
 
     # Fenced code blocks (```lang ... ```)
-    escaped = re.sub(
-        r"```(\w*)\n(.*?)```",
-        lambda m: park(f'<pre><code class="language-{m.group(1)}">{m.group(2)}</code></pre>'),
-        escaped,
-        flags=re.DOTALL,
-    )
+    escaped = re.sub(r"```([\w+#-]*)\n(.*?)```", lambda m: park(_code_block(*m.groups())), escaped, flags=re.DOTALL)
 
     # Inline code
     escaped = re.sub(r"`([^`\n]+)`", lambda m: park(f"<code>{m.group(1)}</code>"), escaped)
@@ -83,6 +80,11 @@ def render_markdown(text: str) -> str:
     while _SLOT_RE.search(escaped):
         escaped = _SLOT_RE.sub(lambda m: slots[int(m.group(1))], escaped)
     return escaped
+
+
+def _code_block(lang: str, escaped_code: str) -> str:
+    highlighted = highlight(html.unescape(escaped_code), lang) if lang else None
+    return f'<pre><code class="language-{lang}">{highlighted or escaped_code}</code></pre>'
 
 
 _CITATION_BLOCK_RE = re.compile(r"\s*<oai-mem-citation>(.*?)(?:</oai-mem-citation>|\Z)", re.S)

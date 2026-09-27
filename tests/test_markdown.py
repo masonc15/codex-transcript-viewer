@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from codex_transcript_viewer.highlight import highlight
 from codex_transcript_viewer.markdown import render_markdown, split_memory_citations
 
 
@@ -98,6 +99,39 @@ class ExistingFormattingTests(unittest.TestCase):
 
     def test_html_is_escaped(self) -> None:
         self.assertEqual(render_markdown("<script>x</script>"), "&lt;script&gt;x&lt;/script&gt;")
+
+
+class HighlightTests(unittest.TestCase):
+    def test_python_tokens(self) -> None:
+        html = highlight('def f():  # hi\n    return "x" + 1', "python")
+        self.assertIn('<span class="tok-keyword">def</span>', html)
+        self.assertIn('<span class="tok-comment"># hi</span>', html)
+        self.assertIn('<span class="tok-string">&quot;x&quot;</span>', html)
+        self.assertIn('<span class="tok-number">1</span>', html)
+
+    def test_strings_hide_comment_markers(self) -> None:
+        html = highlight('url = "http://x#y"', "py")
+        self.assertNotIn("tok-comment", html)
+
+    def test_shell_hash_inside_variable_is_not_a_comment(self) -> None:
+        html = highlight("echo ${#arr[@]} # count", "bash")
+        self.assertEqual(html.count("tok-comment"), 1)
+        self.assertIn("${#arr[@]}", html)
+
+    def test_diff_lines(self) -> None:
+        html = highlight("--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n same", "diff")
+        for kind in ("meta", "hunk", "removed", "added"):
+            self.assertIn(f"tok-{kind}", html)
+
+    def test_unknown_language_is_left_alone(self) -> None:
+        self.assertIsNone(highlight("x", "brainfuck"))
+        self.assertEqual(render_markdown("```brainfuck\n<+>\n```"),
+                         '<pre><code class="language-brainfuck">&lt;+&gt;\n</code></pre>')
+
+    def test_code_is_escaped_in_highlighted_blocks(self) -> None:
+        html = render_markdown("```js\nif (a < b) { x = '<b>' }\n```")
+        self.assertIn("&lt;", html)
+        self.assertNotIn("<b>", html)
 
 
 class MemoryCitationTests(unittest.TestCase):

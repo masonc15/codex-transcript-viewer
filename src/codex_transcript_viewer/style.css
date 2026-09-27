@@ -534,6 +534,16 @@ body {
   font-weight: bold;
 }
 
+/* Syntax highlighting in fenced code */
+.tok-keyword { color: #c792ea; }
+.tok-string { color: var(--success); }
+.tok-number { color: var(--mdHeading); }
+.tok-comment { color: var(--muted); font-style: italic; }
+.tok-added { color: var(--success); }
+.tok-removed { color: var(--error); }
+.tok-hunk { color: var(--mdLink); }
+.tok-meta { color: var(--muted); font-weight: bold; }
+
 /* Memory citations folded under an answer */
 .memory-citations { margin-top: 8px; color: var(--muted); font-size: 11px; white-space: normal; }
 .memory-citations summary { cursor: pointer; }
