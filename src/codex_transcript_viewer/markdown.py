@@ -11,27 +11,49 @@ def escape(text: str | None) -> str:
     return html.escape(str(text)) if text else ""
 
 
-def render_markdown(text: str) -> str:
-    """Convert basic markdown to HTML.
+# Rendered pieces are parked behind placeholders so later passes (emphasis,
+# links, tables) never look inside code or inside markup already produced.
+_SLOT = "\x00{}\x00"
+_SLOT_RE = re.compile("\x00(\\d+)\x00")
 
-    Handles fenced code blocks, inline code, bold, italic, headers, and
-    unordered lists. Intended for session transcript content where full
-    CommonMark compliance is unnecessary.
+_LINK_RE = re.compile(r"\[([^\]\n]+)\]\(([^)\s]+)\)")
+_AUTOLINK_RE = re.compile(r"&lt;(https?://[^\s&]+)&gt;")
+_BARE_URL_RE = re.compile(r"(?<![\w/=\"'])(https?://[^\s<\x00]*[^\s<\x00.,;:!?)\]'\"])")
+_WEB_URL_RE = re.compile(r"^(https?://|mailto:)", re.IGNORECASE)
+
+_TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$")
+
+
+def render_markdown(text: str) -> str:
+    """Convert the markdown Codex writes to HTML.
+
+    Handles fenced code blocks, inline code, bold, italic, headers, unordered
+    lists, links and pipe tables. Intended for session transcript content
+    where full CommonMark compliance is unnecessary.
     """
+    slots: list[str] = []
+
+    def park(markup: str) -> str:
+        slots.append(markup)
+        return _SLOT.format(len(slots) - 1)
+
     escaped = escape(text)
 
     # Fenced code blocks (```lang ... ```)
-    def _replace_code_block(m: re.Match) -> str:
-        lang = m.group(1) or ""
-        code = m.group(2)
-        return f'<pre><code class="language-{lang}">{code}</code></pre>'
-
     escaped = re.sub(
-        r"```(\w*)\n(.*?)```", _replace_code_block, escaped, flags=re.DOTALL
+        r"```(\w*)\n(.*?)```",
+        lambda m: park(f'<pre><code class="language-{m.group(1)}">{m.group(2)}</code></pre>'),
+        escaped,
+        flags=re.DOTALL,
     )
 
     # Inline code
-    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    escaped = re.sub(r"`([^`\n]+)`", lambda m: park(f"<code>{m.group(1)}</code>"), escaped)
+
+    # Links: [text](target), <https://...>, and bare web addresses
+    escaped = _LINK_RE.sub(lambda m: park(_link(m.group(1), m.group(2))), escaped)
+    escaped = _AUTOLINK_RE.sub(lambda m: park(_link(m.group(1), m.group(1))), escaped)
+    escaped = _BARE_URL_RE.sub(lambda m: park(_link(m.group(1), m.group(1))), escaped)
 
     # Bold
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
@@ -55,4 +77,80 @@ def render_markdown(text: str) -> str:
     # Unordered list items
     escaped = re.sub(r"^- (.+)$", r"• \1", escaped, flags=re.MULTILINE)
 
+    escaped = _render_tables(escaped)
+
+    # Restore parked markup; link text may itself hold parked inline code.
+    while _SLOT_RE.search(escaped):
+        escaped = _SLOT_RE.sub(lambda m: slots[int(m.group(1))], escaped)
     return escaped
+
+
+def _link(label: str, target: str) -> str:
+    """Web links open in a new tab; file paths can't be followed from a saved
+    page, so they show their label with the full path on hover."""
+    if _WEB_URL_RE.match(target):
+        return f'<a href="{target}" target="_blank" rel="noopener noreferrer">{label}</a>'
+    return f'<span class="md-path" title="{target}">{label}</span>'
+
+
+def _split_row(line: str) -> list[str]:
+    row = line.strip()
+    if row.startswith("|"):
+        row = row[1:]
+    if row.endswith("|") and not row.endswith("\\|"):
+        row = row[:-1]
+    cells = re.split(r"(?<!\\)\|", row)
+    return [cell.strip().replace("\\|", "|") for cell in cells]
+
+
+def _alignment(spec: str) -> str:
+    spec = spec.strip()
+    if spec.startswith(":") and spec.endswith(":"):
+        return "center"
+    if spec.endswith(":"):
+        return "right"
+    return ""
+
+
+def _render_tables(text: str) -> str:
+    """Turn pipe tables (a header row, a --- separator, then rows) into HTML."""
+    lines = text.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        header = lines[i]
+        if (
+            "|" in header
+            and i + 1 < len(lines)
+            and "-" in lines[i + 1]
+            and _TABLE_SEPARATOR_RE.match(lines[i + 1])
+            and len(_split_row(lines[i + 1])) == len(_split_row(header))
+        ):
+            heads = _split_row(header)
+            aligns = [_alignment(spec) for spec in _split_row(lines[i + 1])]
+            rows = []
+            i += 2
+            while i < len(lines) and "|" in lines[i] and lines[i].strip():
+                cells = _split_row(lines[i])
+                cells = (cells + [""] * len(heads))[: len(heads)]
+                rows.append(cells)
+                i += 1
+            out.append(_table_html(heads, aligns, rows))
+            continue
+        out.append(header)
+        i += 1
+    # A table is a block, so drop the line break that would follow it.
+    return re.sub("(</table>)\n", r"\1", "\n".join(out))
+
+
+def _table_html(heads: list[str], aligns: list[str], rows: list[list[str]]) -> str:
+    def cell(tag: str, content: str, align: str) -> str:
+        style = f' style="text-align:{align}"' if align else ""
+        return f"<{tag}{style}>{content}</{tag}>"
+
+    head = "".join(cell("th", h, a) for h, a in zip(heads, aligns))
+    body = "".join(
+        "<tr>" + "".join(cell("td", c, a) for c, a in zip(row, aligns)) + "</tr>"
+        for row in rows
+    )
+    return f'<table class="md-table"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'

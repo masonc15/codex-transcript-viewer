@@ -470,6 +470,7 @@ body {
 .markdown-content p + p { margin-top: var(--line-height); }
 
 .markdown-content a { color: var(--mdLink); text-decoration: underline; }
+.markdown-content .md-path { color: var(--mdLink); border-bottom: 1px dotted var(--mdLink); cursor: help; }
 
 .markdown-content code {
   background: rgba(128, 128, 128, 0.2);
@@ -519,6 +520,7 @@ body {
   border-collapse: collapse;
   margin: 0.5em 0;
   width: 100%;
+  white-space: normal;
 }
 
 .markdown-content th, .markdown-content td {
