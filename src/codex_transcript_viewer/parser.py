@@ -885,7 +885,9 @@ def _find_matching_response_index(
     """Return the nearest unused same-turn response_item duplicating events[idx].
 
     The pool holds only response-side message and reasoning events, so tool
-    events never push a counterpart out of reach.
+    events never push a counterpart out of reach. task_complete repeats a
+    message that its agent_message copy may already have matched, so it may
+    match a used response too.
     """
     candidate = events[idx]
     if candidate.get("_source") != "event_msg":
@@ -894,7 +896,7 @@ def _find_matching_response_index(
         return None
 
     for j in sorted(turn_pool, key=lambda j: abs(j - idx)):
-        if j in used_indices:
+        if j in used_indices and candidate.get("type") != "task_complete":
             continue
         if _is_response_counterpart(candidate, events[j]):
             return j
@@ -921,12 +923,7 @@ def _drop_overlapped_event_msg_events(events: list[dict]) -> list[dict]:
             events, idx, pools.get(event.get("_turn_seq"), []), used_response_indices
         )
         if match_idx is not None:
-            # A final answer can have two event_msg copies (agent_message and
-            # task_complete); leave it available for the second one.
-            if not (
-                event.get("type") == "agent_commentary"
-                and events[match_idx].get("phase") == "final_answer"
-            ):
+            if event.get("type") != "task_complete":
                 used_response_indices.add(match_idx)
             continue
 

@@ -183,6 +183,21 @@ class DedupDensityTests(unittest.TestCase):
                 self.assertEqual(counts["task_complete"], 0)
                 self.assertEqual(counts["assistant_text"], 1)
 
+    def test_task_complete_matches_message_its_agent_message_matched(self) -> None:
+        for phase in ("", "commentary"):
+            with self.subTest(phase=phase):
+                counts = self._counts(
+                    [
+                        _event_msg({"type": "task_started", "turn_id": "t1"}),
+                        _event_msg({"type": "agent_message", "message": "All set."}),
+                        _assistant("All set.", phase),
+                        _event_msg({"type": "task_complete", "last_agent_message": "All set."}),
+                    ]
+                )
+                self.assertEqual(counts["agent_commentary"], 0)
+                self.assertEqual(counts["task_complete"], 0)
+                self.assertEqual(counts["assistant_text"], 1)
+
     def test_commentary_that_only_starts_a_final_answer_is_kept(self) -> None:
         counts = self._counts(
             [
