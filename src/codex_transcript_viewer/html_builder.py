@@ -18,6 +18,9 @@ def _load_asset(name: str) -> str:
 
 
 DEFAULT_IMAGE_BUDGET_MB = 25
+# Codex already limits model-visible tool output to roughly 200K characters, so
+# this only guards against pathological inputs; it never hides what the model saw.
+DEFAULT_MAX_OUTPUT_CHARS = 250_000
 
 
 @dataclass
@@ -28,6 +31,7 @@ class RenderContext:
     # Budget for tool-output images, in characters of embedded data URL.
     # Prompt images are always embedded and do not count against it.
     image_budget: int = DEFAULT_IMAGE_BUDGET_MB * 1_000_000
+    max_output_chars: int = DEFAULT_MAX_OUTPUT_CHARS
     image_used: int = 0
     images_omitted: int = 0
     images_omitted_bytes: int = 0
@@ -41,14 +45,17 @@ def build_html(
     *,
     embed_images: bool = True,
     max_image_mb: float = DEFAULT_IMAGE_BUDGET_MB,
+    max_output_chars: int = DEFAULT_MAX_OUTPUT_CHARS,
 ) -> str:
     """Build a self-contained HTML string from session metadata and events.
 
-    ``max_image_mb`` caps embedded tool-output images per page; 0 means no cap.
+    ``max_image_mb`` caps embedded tool-output images per page and
+    ``max_output_chars`` caps each tool output's text; 0 disables either cap.
     """
     ctx = RenderContext(
         embed_images=embed_images,
         image_budget=int(max_image_mb * 1_000_000),
+        max_output_chars=max_output_chars,
     )
     for evt in events:
         call_id = evt.get("call_id")
@@ -454,8 +461,16 @@ def _render_tool_call(evt, ts, anchor, sidebar, messages, ctx):
 
 def _render_tool_output(evt, ts, anchor, sidebar, messages, ctx):
     output = evt["output"]
+    omitted = ""
+    cap = ctx.max_output_chars
+    if cap > 0 and len(output) > cap:
+        # Cut the raw text before escaping so no HTML entity is split.
+        omitted = f"\n[{len(output) - cap:,} characters omitted]"
+        shown = output[:cap]
+    else:
+        shown = output
     truncated = len(output) > 2000
-    preview = output[:2000]
+    preview = shown[:2000]
 
     attachments = evt.get("attachments") or []
     size_label = f"{len(output)} chars"
@@ -489,7 +504,7 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages, ctx):
         f"{_status_badge(evt, status)}</div>"
         f'<div class="tool-output{expandable_class}" onclick="this.classList.toggle(\'expanded\')">'
         f'<div class="output-preview"><pre>{escape(preview)}{expand_hint}</pre></div>'
-        f'<div class="output-full"><pre>{escape(output)}</pre></div>'
+        f'<div class="output-full"><pre>{escape(shown)}{escape(omitted)}</pre></div>'
         f"</div>{output_images}</div>"
     )
 
