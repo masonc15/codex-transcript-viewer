@@ -149,6 +149,51 @@ class DedupDensityTests(unittest.TestCase):
         self.assertEqual(counts["task_complete"], 0)
         self.assertEqual(counts["assistant_text"], 1)
 
+    def test_final_answer_copy_without_memory_citation_shows_once(self) -> None:
+        answer = "Done. Tests pass."
+        citation = "<oai-mem-citation>\n<citation_entries>\nMEMORY.md:1-2\n</citation_entries>\n</oai-mem-citation>"
+        counts = self._counts(
+            [
+                _event_msg({"type": "task_started", "turn_id": "t1"}),
+                _event_msg({"type": "agent_message", "message": answer}),
+                _assistant(f"{answer}\n\n{citation}", "final_answer"),
+                _event_msg({"type": "task_complete", "last_agent_message": answer}),
+            ]
+        )
+        self.assertEqual(counts["agent_commentary"], 0)
+        self.assertEqual(counts["task_complete"], 0)
+        self.assertEqual(counts["assistant_text"], 1)
+
+    def test_plan_mode_copies_without_proposed_plan_show_once(self) -> None:
+        plan = "<proposed_plan>\n# Plan\n- step\n</proposed_plan>"
+        for answer, copy in (
+            (f"Locked: no reinstall.\n\n{plan}", "Locked: no reinstall.\n\n"),
+            (f"Still in Plan Mode.\n\n{plan}\n\nSources: a, b.", "Still in Plan Mode.\n\nSources: a, b."),
+        ):
+            with self.subTest(copy=copy):
+                counts = self._counts(
+                    [
+                        _event_msg({"type": "task_started", "turn_id": "t1"}),
+                        _event_msg({"type": "agent_message", "message": copy}),
+                        _assistant(answer, "final_answer"),
+                        _event_msg({"type": "task_complete", "last_agent_message": copy}),
+                    ]
+                )
+                self.assertEqual(counts["agent_commentary"], 0)
+                self.assertEqual(counts["task_complete"], 0)
+                self.assertEqual(counts["assistant_text"], 1)
+
+    def test_commentary_that_only_starts_a_final_answer_is_kept(self) -> None:
+        counts = self._counts(
+            [
+                _event_msg({"type": "task_started", "turn_id": "t1"}),
+                _event_msg({"type": "agent_message", "message": "Checking the parser"}),
+                _assistant("Checking the parser first was right: it drops nothing.", "final_answer"),
+            ]
+        )
+        self.assertEqual(counts["agent_commentary"], 1)
+        self.assertEqual(counts["assistant_text"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

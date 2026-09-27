@@ -832,6 +832,18 @@ def _normalize_text(value: Any) -> str:
     return " ".join(_as_text(value).split())
 
 
+_EVENT_COPY_OMITS_RE = re.compile(r"<(oai-mem-citation|proposed_plan)>(?:.*?</\1>|.*\Z)", re.S)
+
+
+def _event_copy_text(response_text: Any) -> str:
+    """The text an event_msg copy of this response carries.
+
+    agent_message and task_complete copies leave out proposed-plan and
+    memory-citation blocks, wherever they sit in the answer.
+    """
+    return _normalize_text(_EVENT_COPY_OMITS_RE.sub("", _as_text(response_text)))
+
+
 def _is_response_counterpart(candidate: dict, response_event: dict) -> bool:
     if response_event.get("_source") != "response_item":
         return False
@@ -841,26 +853,23 @@ def _is_response_counterpart(candidate: dict, response_event: dict) -> bool:
     candidate_type = candidate.get("type")
     candidate_text = _normalize_text(candidate.get("text", ""))
     response_text = _normalize_text(response_event.get("text", ""))
-    if candidate_type == "agent_commentary":
-        # Older sessions also log each final answer as an agent_message, so
-        # commentary may match a final answer as well as ordinary commentary.
-        if response_event.get("type") != "assistant_text":
-            return False
-    elif candidate_type == "reasoning":
-        if response_event.get("type") != "reasoning":
-            return False
-    elif candidate_type == "task_complete":
-        if response_event.get("type") != "assistant_text":
-            return False
-        if response_event.get("phase") != "final_answer":
-            # Plan-mode turns end on commentary; task_complete repeats it verbatim.
-            return candidate_text == response_text
-        # task_complete often repeats the final answer without its trailing block.
-        return bool(candidate_text) and response_text.startswith(candidate_text)
-    else:
+    if candidate_type == "reasoning":
+        return response_event.get("type") == "reasoning" and candidate_text == response_text
+    if candidate_type not in ("agent_commentary", "task_complete"):
         return False
-
-    return candidate_text == response_text
+    if response_event.get("type") != "assistant_text":
+        return False
+    # Older sessions log each assistant message, final answers included, as an
+    # agent_message; task_complete repeats the turn's last message.
+    if candidate_text in (response_text, _event_copy_text(response_event.get("text", ""))):
+        return True
+    # task_complete may also cut a final answer short before a trailing block.
+    return (
+        candidate_type == "task_complete"
+        and response_event.get("phase") == "final_answer"
+        and bool(candidate_text)
+        and response_text.startswith(candidate_text)
+    )
 
 
 _MATCHABLE_EVENT_MSG_TYPES = {"agent_commentary", "reasoning", "task_complete"}
