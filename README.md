@@ -57,7 +57,7 @@ If the log contains record types the viewer doesn't know about, it says so on st
 
 ## What the viewer shows
 
-The page has a sticky sidebar with a searchable event tree on the left and the transcript on the right. Your prompts get a green border, with any attached images shown as thumbnails you can click to enlarge. Final answers sit on a faint green background, commentary is italic with a muted border, and reasoning summaries are gray. Each tool call shows its command or arguments, and its result is colored by what actually happened: green when the exit code was 0, red when it failed, and neutral when the log doesn't record a status, so nothing looks successful by accident. Long outputs expand on click. Markdown in prompts and answers renders, tables included; web links open in a new tab, and links to local files show their full path on hover. Generated images show up as the result of their `image_generation` call, next to the prompt the model used. Turn starts, aborts, rollbacks and token counts show up as dim system lines.
+The page has a sticky sidebar with a searchable event tree on the left and the transcript on the right. Your prompts get a green border, with any attached images shown as thumbnails you can click to enlarge. Final answers sit on a faint green background, commentary is italic with a muted border, and reasoning summaries are gray. Each tool call shows its command or arguments, and its result is colored by what actually happened: green when the exit code was 0, red when it failed, and neutral when the log doesn't record a status, so nothing looks successful by accident. Long outputs expand on click. Markdown in prompts, answers and reasoning renders, including tables, nested lists, blockquotes and syntax-highlighted code; web links open in a new tab, and links to local files show their full path on hover. When Codex ends an answer with a memory-citation block, it's folded into a small "Memory citations" section instead of printed raw. Generated images show up as the result of their `image_generation` call, next to the prompt the model used. Turn starts, aborts, rollbacks and token counts show up as dim system lines. The header shows the model and reasoning effort the session started with, and a highlighted row marks any turn that switches either.
 
 Some things Codex only sends to the model, so the viewer shows them as their own highlighted entries: the objective and status changes of a `/goal`, text a hook sent back (a rejected plan, for example), review start and result markers, and errors such as hitting a usage limit. A review's findings appear in full when no reply repeats them. Newer models repeat the turn's earlier reasoning headings each time they add one, so each heading is shown once, at the point it first appeared.
 
@@ -93,6 +93,7 @@ Inspired by the HTML session export in [pi](https://github.com/badlogic/pi-mono/
 src/codex_transcript_viewer/
   parser.py       - JSONL parsing and event extraction
   markdown.py     - lightweight markdown-to-HTML conversion
+  highlight.py    - small built-in syntax highlighter for code blocks
   formatting.py   - timestamp formatting helpers
   html_builder.py - assembles the final HTML from events
   style.css       - all CSS for the viewer
@@ -101,4 +102,7 @@ src/codex_transcript_viewer/
 scripts/
   audit_sessions.py - checks the parser against real sessions
   visual_review.py  - renders sessions and screenshots the sidebar
+docs/demo/
+  make_session.py   - writes the synthetic session behind docs/demo.md
+  screenshots.py    - renders it and saves the demo screenshots
 ```
