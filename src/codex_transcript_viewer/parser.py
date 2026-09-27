@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -128,6 +129,63 @@ def _is_inherited_turn(meta: dict | None, task_started: dict) -> bool:
     if session_time is None or turn_time is None:
         return False
     return turn_time < session_time - _INHERITANCE_TOLERANCE_SECONDS
+
+
+# Record kinds the parser reads, and kinds it skips on purpose because they
+# duplicate other records or carry no transcript content. Anything outside both
+# sets is reported by unrecognized_record_kinds() so format changes get noticed.
+_HANDLED_EVENT_MSG = {
+    "user_message", "agent_message", "agent_reasoning", "task_complete",
+    "task_started", "turn_aborted", "token_count", "thread_rolled_back",
+    "item_completed", "exec_command_end", "patch_apply_end",
+}
+_IGNORED_EVENT_MSG = {
+    "mcp_tool_call_end", "view_image_tool_call", "web_search_end",
+    "context_compacted", "thread_settings_applied", "dynamic_tool_call_request",
+    "dynamic_tool_call_response", "thread_name_updated",
+}
+_IGNORED_ITEM_COMPLETED = {
+    "AgentMessage", "CommandExecution", "Reasoning", "FileChange", "McpToolCall",
+    "WebSearch", "Extension", "Plan", "ContextCompaction", "SubAgentActivity",
+    "ImageView", "FunctionCallOutput", "CollabAgentToolCall", "DynamicToolCall",
+}
+_HANDLED_RESPONSE_ITEM = {
+    "function_call", "function_call_output", "custom_tool_call",
+    "custom_tool_call_output", "web_search_call", "tool_search_call",
+    "tool_search_output", "message", "reasoning",
+}
+_IGNORED_RESPONSE_ITEM = {"ghost_snapshot", "image_generation_call", "agent_message"}
+_IGNORED_TOP_LEVEL = {
+    "token_usage_record", "turn_context", "compacted", "world_state",
+    "inter_agent_communication_metadata",
+}
+
+
+def unrecognized_record_kinds(entries: list[dict]) -> Counter:
+    """Count record kinds that are neither parsed nor deliberately ignored."""
+    unknown: Counter = Counter()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        etype = entry.get("type")
+        payload = entry.get("payload")
+        subtype = payload.get("type") if isinstance(payload, dict) else None
+        if etype == "session_meta":
+            continue
+        if etype == "event_msg":
+            if subtype == "item_completed":
+                item = payload.get("item")
+                kind = item.get("type") if isinstance(item, dict) else None
+                if kind != "UserMessage" and kind not in _IGNORED_ITEM_COMPLETED:
+                    unknown[f"item_completed/{kind}"] += 1
+            elif subtype not in _HANDLED_EVENT_MSG and subtype not in _IGNORED_EVENT_MSG:
+                unknown[f"event_msg/{subtype}"] += 1
+        elif etype == "response_item":
+            if subtype not in _HANDLED_RESPONSE_ITEM and subtype not in _IGNORED_RESPONSE_ITEM:
+                unknown[f"response_item/{subtype}"] += 1
+        elif etype not in _IGNORED_TOP_LEVEL:
+            unknown[str(etype)] += 1
+    return unknown
 
 
 def _handle_event_msg(

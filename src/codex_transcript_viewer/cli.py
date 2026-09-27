@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from .html_builder import DEFAULT_IMAGE_BUDGET_MB, DEFAULT_MAX_OUTPUT_CHARS, build_html
-from .parser import extract_conversation, parse_jsonl
+from .parser import extract_conversation, parse_jsonl, unrecognized_record_kinds
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -70,6 +70,11 @@ def main(argv: list[str] | None = None) -> None:
     outpath.write_text(html_content, encoding="utf-8")
     size = outpath.stat().st_size
     print(f"written to {outpath} ({size:,} bytes, {len(events)} events)")
+
+    unknown = unrecognized_record_kinds(entries)
+    if unknown:
+        summary = ", ".join(f"{kind} x{count}" for kind, count in unknown.most_common())
+        print(f"skipped unrecognized records: {summary}", file=sys.stderr)
 
 
 if __name__ == "__main__":
