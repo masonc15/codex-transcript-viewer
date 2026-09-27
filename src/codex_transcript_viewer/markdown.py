@@ -29,9 +29,10 @@ _TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$")
 def render_markdown(text: str) -> str:
     """Convert the markdown Codex writes to HTML.
 
-    Handles fenced code blocks, inline code, bold, italic, headers, unordered
-    lists, links and pipe tables. Intended for session transcript content
-    where full CommonMark compliance is unnecessary.
+    Handles fenced code blocks (highlighted for common languages), inline code,
+    bold, italic, headers, bullet and numbered lists at any depth, blockquotes,
+    links and pipe tables. Intended for session transcript content where full
+    CommonMark compliance is unnecessary.
     """
     slots: list[str] = []
 
@@ -52,6 +53,15 @@ def render_markdown(text: str) -> str:
     escaped = _AUTOLINK_RE.sub(lambda m: park(_link(m.group(1), m.group(1))), escaped)
     escaped = _BARE_URL_RE.sub(lambda m: park(_link(m.group(1), m.group(1))), escaped)
 
+    # List items, before emphasis so a "* " bullet is not read as italics
+    escaped = re.sub(r"^( *)[-*+] (?=\S)", _bullet, escaped, flags=re.MULTILINE)
+    escaped = re.sub(
+        r"^( *)(\d+)[.)] (?=\S)",
+        lambda m: park(f'{m.group(1)}<span class="md-list-number">{m.group(2)}.</span> '),
+        escaped,
+        flags=re.MULTILINE,
+    )
+
     # Bold
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
 
@@ -71,9 +81,7 @@ def render_markdown(text: str) -> str:
         r"^# (.+)$", r"<h1>\1</h1>", escaped, flags=re.MULTILINE
     )
 
-    # Unordered list items
-    escaped = re.sub(r"^- (.+)$", r"• \1", escaped, flags=re.MULTILINE)
-
+    escaped = _render_blockquotes(escaped)
     escaped = _render_tables(escaped)
 
     # Restore parked markup; link text may itself hold parked inline code.
@@ -85,6 +93,35 @@ def render_markdown(text: str) -> str:
 def _code_block(lang: str, escaped_code: str) -> str:
     highlighted = highlight(html.unescape(escaped_code), lang) if lang else None
     return f'<pre><code class="language-{lang}">{highlighted or escaped_code}</code></pre>'
+
+
+_BULLETS = ("\u2022", "\u25e6", "\u25aa")
+
+
+def _bullet(match: re.Match) -> str:
+    """Bullets change shape with depth: two spaces of indent per level."""
+    indent = match.group(1)
+    return indent + _BULLETS[min(len(indent) // 2, len(_BULLETS) - 1)] + " "
+
+
+def _render_blockquotes(text: str) -> str:
+    """Group consecutive "> " lines into one blockquote."""
+    out: list[str] = []
+    quote: list[str] = []
+
+    def flush() -> None:
+        if quote:
+            out.append("<blockquote>" + "\n".join(quote) + "</blockquote>")
+            quote.clear()
+
+    for line in text.split("\n"):
+        if line.startswith("&gt;"):
+            quote.append(line[4:][1:] if line[4:5] == " " else line[4:])
+        else:
+            flush()
+            out.append(line)
+    flush()
+    return re.sub("(</blockquote>)\n", r"\1", "\n".join(out))
 
 
 _CITATION_BLOCK_RE = re.compile(r"\s*<oai-mem-citation>(.*?)(?:</oai-mem-citation>|\Z)", re.S)

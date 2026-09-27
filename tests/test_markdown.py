@@ -101,6 +101,27 @@ class ExistingFormattingTests(unittest.TestCase):
         self.assertEqual(render_markdown("<script>x</script>"), "&lt;script&gt;x&lt;/script&gt;")
 
 
+class ListAndQuoteTests(unittest.TestCase):
+    def test_nested_bullets_change_shape_by_depth(self) -> None:
+        html = render_markdown("- a\n  - b\n    - c\n      - d\n* e\n+ f")
+        self.assertEqual(html, "\u2022 a\n  \u25e6 b\n    \u25aa c\n      \u25aa d\n\u2022 e\n\u2022 f")
+
+    def test_star_bullet_is_not_italics(self) -> None:
+        html = render_markdown("* one\n* two")
+        self.assertNotIn("<em>", html)
+
+    def test_numbered_items_get_styled_numbers(self) -> None:
+        html = render_markdown("1. first\n  2) nested")
+        self.assertEqual(
+            html,
+            '<span class="md-list-number">1.</span> first\n  <span class="md-list-number">2.</span> nested',
+        )
+
+    def test_blockquote_groups_lines(self) -> None:
+        html = render_markdown("before\n> one **bold**\n>two\nafter")
+        self.assertEqual(html, "before\n<blockquote>one <strong>bold</strong>\ntwo</blockquote>after")
+
+
 class HighlightTests(unittest.TestCase):
     def test_python_tokens(self) -> None:
         html = highlight('def f():  # hi\n    return "x" + 1', "python")

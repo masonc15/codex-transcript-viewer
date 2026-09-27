@@ -534,6 +534,8 @@ body {
   font-weight: bold;
 }
 
+.markdown-content .md-list-number { color: var(--mdListBullet); }
+
 /* Syntax highlighting in fenced code */
 .tok-keyword { color: #c792ea; }
 .tok-string { color: var(--success); }
