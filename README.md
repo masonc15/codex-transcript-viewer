@@ -59,6 +59,14 @@ Both session formats Codex has used are handled: the older one, where prompts ar
 
 The transcript is an activity log, so rolled-back turns stay inline with a banner rather than disappearing. The filters hide sidebar entries, not the transcript itself. Image generation calls aren't rendered yet.
 
+## Development
+
+Run the tests with `PYTHONPATH=src python3 -m unittest discover -s tests`. They use synthetic records, so they only cover the shapes someone thought to write down.
+
+Before a release, run `python3 scripts/audit_sessions.py` over your real sessions (it reads `~/.codex/sessions` and `~/.codex/archived_sessions` by default, or any paths you give it). For every session it checks that no text shows twice in a turn, that the visible prompts, messages and reasoning match what the raw records say should be there, and that every pair of record kinds sharing text is covered by a dedup rule. None of these compare against an earlier run of the viewer, so an old bug can't hide in the baseline. `--tar -` reads sessions from a tar stream, which is handy for an archive on another machine.
+
+Then run `uv run --with playwright python scripts/visual_review.py --from-audit report.json`, using the report from `audit_sessions.py --json report.json`. It renders one session per format, fails if two kinds of entry in the same role repeat each other, and saves sidebar screenshots to look over. Both scripts print session text, so keep their output out of the repository.
+
 ## Credits
 
 Inspired by the HTML session export in [pi](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent), a coding agent by [@badlogic](https://github.com/badlogic).
@@ -74,4 +82,7 @@ src/codex_transcript_viewer/
   style.css       - all CSS for the viewer
   viewer.js       - sidebar filtering and navigation
   cli.py          - command-line entry point
+scripts/
+  audit_sessions.py - checks the parser against real sessions
+  visual_review.py  - renders sessions and screenshots the sidebar
 ```
