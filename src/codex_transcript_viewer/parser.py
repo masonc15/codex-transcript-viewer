@@ -842,9 +842,9 @@ def _is_response_counterpart(candidate: dict, response_event: dict) -> bool:
     candidate_text = _normalize_text(candidate.get("text", ""))
     response_text = _normalize_text(response_event.get("text", ""))
     if candidate_type == "agent_commentary":
+        # Older sessions also log each final answer as an agent_message, so
+        # commentary may match a final answer as well as ordinary commentary.
         if response_event.get("type") != "assistant_text":
-            return False
-        if response_event.get("phase") == "final_answer":
             return False
     elif candidate_type == "reasoning":
         if response_event.get("type") != "reasoning":
@@ -912,7 +912,13 @@ def _drop_overlapped_event_msg_events(events: list[dict]) -> list[dict]:
             events, idx, pools.get(event.get("_turn_seq"), []), used_response_indices
         )
         if match_idx is not None:
-            used_response_indices.add(match_idx)
+            # A final answer can have two event_msg copies (agent_message and
+            # task_complete); leave it available for the second one.
+            if not (
+                event.get("type") == "agent_commentary"
+                and events[match_idx].get("phase") == "final_answer"
+            ):
+                used_response_indices.add(match_idx)
             continue
 
         filtered.append(event)

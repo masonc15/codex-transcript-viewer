@@ -136,5 +136,19 @@ class DedupDensityTests(unittest.TestCase):
         self.assertEqual(counts["task_complete"], 0)
 
 
+    def test_final_answer_logged_as_agent_message_and_task_complete_shows_once(self) -> None:
+        counts = self._counts(
+            [
+                _event_msg({"type": "task_started", "turn_id": "t1"}),
+                _event_msg({"type": "agent_message", "message": "Done. Tests pass."}),
+                _assistant("Done. Tests pass.", "final_answer"),
+                _event_msg({"type": "task_complete", "last_agent_message": "Done. Tests pass."}),
+            ]
+        )
+        self.assertEqual(counts["agent_commentary"], 0)
+        self.assertEqual(counts["task_complete"], 0)
+        self.assertEqual(counts["assistant_text"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
