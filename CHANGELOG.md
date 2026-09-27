@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- Goals set with `/goal` show up, with their objective and each status change (complete, paused, blocked, out of budget). Codex logs the goal again after nearly every step, so only real changes are kept.
+- Generated images render, along with the prompt the model used. They count toward the `--max-image-mb` budget.
+- Hook messages, review start and result markers, and errors like a usage limit now appear. A review's findings are listed when no reply repeats them.
+- Reasoning headings no longer repeat. Newer models restate a turn's earlier headings every time they add one, which made about a quarter of the headings in recent sessions duplicates.
+- Record types that carry nothing to show (guardian approvals, subagent status, voice sessions, undo) are skipped quietly instead of being reported as unrecognized.
+
 ## 0.2.2
 
 - 0.2.1 only fixed some of the doubled final answers. Older sessions also log a final answer without its memory citations or proposed plan, and those copies still showed as commentary. They're gone now, along with a doubled last message in older and plan-mode turns.
