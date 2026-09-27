@@ -534,6 +534,13 @@ body {
   font-weight: bold;
 }
 
+/* Memory citations folded under an answer */
+.memory-citations { margin-top: 8px; color: var(--muted); font-size: 11px; white-space: normal; }
+.memory-citations summary { cursor: pointer; }
+.memory-citations ul { margin: 4px 0 0 20px; }
+.memory-citations .citation-location { color: var(--mdLink); }
+.memory-citations .citation-rollouts { margin-top: 4px; }
+
 /* Footer */
 .footer {
   margin-top: 48px;

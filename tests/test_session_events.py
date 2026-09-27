@@ -247,6 +247,17 @@ class TurnSettingsTests(unittest.TestCase):
         self.assertIn('<span class="info-value">openai</span>', build_html(meta, events))
 
 
+class MemoryCitationRenderTests(unittest.TestCase):
+    def test_citations_fold_under_the_answer(self) -> None:
+        answer = ("All set.\n\n<oai-mem-citation>\n<citation_entries>\nMEMORY.md:1-2|note=[why]\n"
+                  "</citation_entries>\n<rollout_ids>\nr1\n</rollout_ids>\n</oai-mem-citation>")
+        html = _html(_turn(), _response_item({"type": "message", "role": "assistant", "phase": "final_answer",
+                                              "content": [{"type": "output_text", "text": answer}]}))
+        self.assertNotIn("oai-mem-citation", html)
+        self.assertIn("Memory citations: 1 memory entry from 1 earlier session", html)
+        self.assertIn('<span class="citation-location">MEMORY.md:1-2</span> \u2014 why', html)
+
+
 class RecordKindTests(unittest.TestCase):
     def test_new_kinds_are_handled_or_ignored(self) -> None:
         entries = [

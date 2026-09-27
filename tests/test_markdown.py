@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from codex_transcript_viewer.markdown import render_markdown
+from codex_transcript_viewer.markdown import render_markdown, split_memory_citations
 
 
 class LinkTests(unittest.TestCase):
@@ -98,6 +98,32 @@ class ExistingFormattingTests(unittest.TestCase):
 
     def test_html_is_escaped(self) -> None:
         self.assertEqual(render_markdown("<script>x</script>"), "&lt;script&gt;x&lt;/script&gt;")
+
+
+class MemoryCitationTests(unittest.TestCase):
+    BLOCK = (
+        "<oai-mem-citation>\n<citation_entries>\n"
+        "MEMORY.md:383-405|note=[slack digest source of truth]\n"
+        "extensions/x/resources/a.md:1-2|note=[other]\n"
+        "</citation_entries>\n<rollout_ids>\n019e-a\n019e-b\n</rollout_ids>\n</oai-mem-citation>"
+    )
+
+    def test_split_citations(self) -> None:
+        text, entries, rollouts = split_memory_citations("Done.\n\n" + self.BLOCK)
+        self.assertEqual(text, "Done.")
+        self.assertEqual(entries[0], {"location": "MEMORY.md:383-405", "note": "slack digest source of truth"})
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(rollouts, ["019e-a", "019e-b"])
+
+    def test_unclosed_block_and_typo_close_tag(self) -> None:
+        text, entries, rollouts = split_memory_citations(
+            "Done.\n<oai-mem-citation>\n<citation_entries>\nMEMORY.md:1-2|note=[n]\n"
+            "</citation_entries>\n<rollout_ids>\nr1\n</rollup_ids>"
+        )
+        self.assertEqual((text, len(entries), rollouts), ("Done.", 1, ["r1"]))
+
+    def test_text_without_citations_is_unchanged(self) -> None:
+        self.assertEqual(split_memory_citations("plain\n"), ("plain\n", [], []))
 
 
 if __name__ == "__main__":

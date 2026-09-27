@@ -85,6 +85,34 @@ def render_markdown(text: str) -> str:
     return escaped
 
 
+_CITATION_BLOCK_RE = re.compile(r"\s*<oai-mem-citation>(.*?)(?:</oai-mem-citation>|\Z)", re.S)
+_CITATION_SECTION_RE = re.compile(r"<(citation_entries|rollout_ids)>(.*?)(?:</\w+>|\Z)", re.S)
+
+
+def split_memory_citations(text: str) -> tuple[str, list[dict], list[str]]:
+    """Take Codex's memory-citation blocks out of an answer.
+
+    Returns the answer without them, the cited entries as
+    {"location", "note"} dicts, and the ids of the sessions they came from.
+    """
+    entries: list[dict] = []
+    rollouts: list[str] = []
+    for block in _CITATION_BLOCK_RE.finditer(text):
+        for section, body in _CITATION_SECTION_RE.findall(block.group(1)):
+            for line in body.splitlines():
+                line = line.strip()
+                if not line or line.startswith("<"):
+                    continue
+                if section == "rollout_ids":
+                    rollouts.append(line)
+                    continue
+                location, _, note = line.partition("|note=")
+                entries.append({"location": location.strip(), "note": note.strip().strip("[]")})
+    if not entries and not rollouts:
+        return text, [], []
+    return _CITATION_BLOCK_RE.sub("", text).rstrip(), entries, rollouts
+
+
 def _link(label: str, target: str) -> str:
     """Web links open in a new tab; file paths can't be followed from a saved
     page, so they show their label with the full path on hover."""

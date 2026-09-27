@@ -9,7 +9,7 @@ from datetime import datetime
 from importlib import resources
 
 from .formatting import format_ts, format_ts_full
-from .markdown import escape, render_markdown
+from .markdown import escape, render_markdown, split_memory_citations
 
 
 def _load_asset(name: str) -> str:
@@ -331,12 +331,12 @@ def _render_agent_commentary(evt, ts, anchor, sidebar, messages, ctx):
     sidebar.append(
         f'<a class="tree-node tree-role-assistant" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
-        f'<span class="tree-content">\U0001f4ac {escape(evt["text"][:60])}</span></a>'
+        f'<span class="tree-content">\U0001f4ac {escape(_reply_preview(evt["text"]))}</span></a>'
     )
     messages.append(
         f'<div class="commentary-message" id="{anchor}">'
         f'<div class="message-timestamp">{ts}</div>'
-        f'<div class="markdown-content">{render_markdown(evt["text"])}</div>'
+        f"{_render_reply(evt['text'])}"
         f"</div>"
     )
 
@@ -346,7 +346,7 @@ def _render_assistant_text(evt, ts, anchor, sidebar, messages, ctx):
         _render_task_complete(evt, ts, anchor, sidebar, messages, ctx)
         return
     phase_label = f' ({evt["phase"]})' if evt.get("phase") else ""
-    preview = evt["text"][:60].replace("\n", " ")
+    preview = _reply_preview(evt["text"])
     sidebar.append(
         f'<a class="tree-node tree-role-assistant" data-kind="assistant" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
@@ -355,8 +355,41 @@ def _render_assistant_text(evt, ts, anchor, sidebar, messages, ctx):
     messages.append(
         f'<div class="assistant-message" id="{anchor}">'
         f'<div class="message-timestamp">{ts}{escape(phase_label)}</div>'
-        f'<div class="assistant-text markdown-content">{render_markdown(evt["text"])}</div>'
+        f'{_render_reply(evt["text"], "assistant-text ")}'
         f"</div>"
+    )
+
+
+def _reply_preview(text: str) -> str:
+    """Sidebar text for an assistant message, without its memory citations."""
+    return split_memory_citations(text)[0][:60].replace("\n", " ")
+
+
+def _render_reply(text: str, extra_class: str = "") -> str:
+    """An assistant message, with its memory citations folded away at the end."""
+    body, entries, rollouts = split_memory_citations(text)
+    html = f'<div class="{extra_class}markdown-content">{render_markdown(body)}</div>'
+    if not entries and not rollouts:
+        return html
+    items = "".join(
+        f'<li><span class="citation-location">{escape(entry["location"])}</span>'
+        + (f" \u2014 {escape(entry['note'])}" if entry["note"] else "")
+        + "</li>"
+        for entry in entries
+    )
+    parts = [f"{len(entries)} memory entr{'y' if len(entries) == 1 else 'ies'}"] if entries else []
+    if rollouts:
+        parts.append(f"{len(rollouts)} earlier session{'' if len(rollouts) == 1 else 's'}")
+    sessions = (
+        '<div class="citation-rollouts">Sessions: '
+        + ", ".join(f"<code>{escape(r)}</code>" for r in rollouts)
+        + "</div>"
+        if rollouts
+        else ""
+    )
+    return (
+        f'{html}<details class="memory-citations"><summary>Memory citations: '
+        f'{" from ".join(parts)}</summary><ul>{items}</ul>{sessions}</details>'
     )
 
 
@@ -524,7 +557,7 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages, ctx):
 
 
 def _render_task_complete(evt, ts, anchor, sidebar, messages, ctx):
-    preview = evt["text"][:60].replace("\n", " ")
+    preview = _reply_preview(evt["text"])
     sidebar.append(
         f'<a class="tree-node tree-role-assistant" data-kind="final-answer" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
@@ -533,7 +566,7 @@ def _render_task_complete(evt, ts, anchor, sidebar, messages, ctx):
     messages.append(
         f'<div class="assistant-message final-answer" id="{anchor}">'
         f'<div class="message-timestamp">{ts} \u2014 final answer</div>'
-        f'<div class="assistant-text markdown-content">{render_markdown(evt["text"])}</div>'
+        f'{_render_reply(evt["text"], "assistant-text ")}'
         f"</div>"
     )
 
