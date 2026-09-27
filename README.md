@@ -45,7 +45,9 @@ If the log contains record types the viewer doesn't know about, it says so on st
 
 ## What the viewer shows
 
-The page has a sticky sidebar with a searchable event tree on the left and the transcript on the right. Your prompts get a green border, with any attached images shown as thumbnails you can click to enlarge. Final answers sit on a faint green background, commentary is italic with a muted border, and reasoning summaries are gray. Each tool call shows its command or arguments, and its result is colored by what actually happened: green when the exit code was 0, red when it failed, and neutral when the log doesn't record a status, so nothing looks successful by accident. Long outputs expand on click. Turn starts, aborts, rollbacks and token counts show up as dim system lines.
+The page has a sticky sidebar with a searchable event tree on the left and the transcript on the right. Your prompts get a green border, with any attached images shown as thumbnails you can click to enlarge. Final answers sit on a faint green background, commentary is italic with a muted border, and reasoning summaries are gray. Each tool call shows its command or arguments, and its result is colored by what actually happened: green when the exit code was 0, red when it failed, and neutral when the log doesn't record a status, so nothing looks successful by accident. Long outputs expand on click. Generated images show up as the result of their `image_generation` call, next to the prompt the model used. Turn starts, aborts, rollbacks and token counts show up as dim system lines.
+
+Some things Codex only sends to the model, so the viewer shows them as their own highlighted entries: the objective and status changes of a `/goal`, text a hook sent back (a rejected plan, for example), review start and result markers, and errors such as hitting a usage limit. A review's findings appear in full when no reply repeats them. Newer models repeat the turn's earlier reasoning headings each time they add one, so each heading is shown once, at the point it first appeared.
 
 The sidebar filters are Default, No tools, User, Answers and All. On narrow screens the sidebar tucks behind a hamburger menu.
 
@@ -53,11 +55,11 @@ Subagent threads are labelled with the agent's name and parent thread. When a su
 
 ## Supported sessions
 
-Both session formats Codex has used are handled: the older one, where prompts are `user_message` events (seen through CLI 0.125), and the newer one, where they're `item_completed` records (CLI 0.135 and later). Tool calls cover plain function calls, code-mode `exec` and `apply_patch` custom tools, web searches and tool searches.
+Both session formats Codex has used are handled: the older one, where prompts are `user_message` events (seen through CLI 0.125), and the newer one, where they're `item_completed` records (CLI 0.135 and later). Tool calls cover plain function calls, code-mode `exec` and `apply_patch` custom tools, web searches, tool searches and image generation.
 
 ## Limitations
 
-The transcript is an activity log, so rolled-back turns stay inline with a banner rather than disappearing. The filters hide sidebar entries, not the transcript itself. Image generation calls aren't rendered yet.
+The transcript is an activity log, so rolled-back turns stay inline with a banner rather than disappearing. The filters hide sidebar entries, not the transcript itself.
 
 ## Development
 
