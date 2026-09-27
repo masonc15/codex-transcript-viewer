@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+
+- Short tool outputs no longer appear twice. Every output under 2,000 characters has shown its text twice since the first release; only long outputs were meant to have a preview and a full copy.
+- Memory citations at the end of an answer fold into a small "Memory citations" section, listing each cited note and the sessions it came from, instead of printing Codex's raw citation block.
+- The header shows the model and reasoning effort the session started with, not just "openai", and a row marks each turn that switches model or effort.
+- Code blocks get syntax highlighting for Python, shell, JavaScript and TypeScript, JSON, TOML and YAML, SQL, diffs, and C-like languages. It's built in, so pages stay self-contained.
+- Nested and numbered lists and blockquotes render, and reasoning summaries render as markdown instead of showing literal `**`.
+- The demo page is rebuilt around a made-up session that shows every kind of entry, with a script to regenerate its screenshots.
+- Dependabot keeps the workflow actions current, and the README has PyPI, Python version and test badges.
+
 ## 0.4.0
 
 - The viewer is on PyPI: `uv tool install codex-transcript-viewer`, `pipx install codex-transcript-viewer`, or `uvx codex-transcript-viewer <session.jsonl>` to run it once.
