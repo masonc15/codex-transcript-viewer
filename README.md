@@ -1,5 +1,9 @@
 # codex-transcript-viewer
 
+[![PyPI](https://img.shields.io/pypi/v/codex-transcript-viewer)](https://pypi.org/project/codex-transcript-viewer/)
+[![Python versions](https://img.shields.io/pypi/pyversions/codex-transcript-viewer)](https://pypi.org/project/codex-transcript-viewer/)
+[![Tests](https://github.com/masonc15/codex-transcript-viewer/actions/workflows/tests.yml/badge.svg)](https://github.com/masonc15/codex-transcript-viewer/actions/workflows/tests.yml)
+
 Converts Codex CLI JSONL session transcripts into single-file HTML viewers with sidebar navigation, search, and filtering. No external dependencies. Just open the `.html` in any browser.
 
 ![Viewer showing a final answer with sidebar navigation and filters](https://raw.githubusercontent.com/masonc15/codex-transcript-viewer/main/docs/images/final-answer.png)
