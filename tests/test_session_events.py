@@ -89,5 +89,39 @@ class ReasoningSnapshotTests(unittest.TestCase):
         self.assertEqual(texts, ["A", "B"])
 
 
+class ImageGenerationTests(unittest.TestCase):
+    PNG = "iVBORw0KGgo" + "A" * 400
+
+    def _call(self, result: str | None, status: str = "completed") -> dict:
+        payload = {"type": "image_generation_call", "id": "ig_1", "status": status,
+                   "revised_prompt": "A lighthouse at dusk"}
+        if result is not None:
+            payload["result"] = result
+        return _response_item(payload)
+
+    def test_generated_image_is_a_tool_call_with_image_output(self) -> None:
+        events = _events(_turn(), self._call(self.PNG))
+        call = next(e for e in events if e["type"] == "tool_call")
+        output = next(e for e in events if e["type"] == "tool_output")
+        self.assertEqual((call["name"], call["arguments"]), ("image_generation", "A lighthouse at dusk"))
+        self.assertEqual(output["call_id"], call["call_id"])
+        self.assertTrue(output["attachments"][0]["data_url"].startswith("data:image/png;base64,"))
+        self.assertIs(output["failed"], False)
+
+    def test_generated_image_renders_within_budget(self) -> None:
+        html = _html(_turn(), self._call(self.PNG))
+        self.assertIn("<img src=\"data:image/png;base64,", html)
+        self.assertIn("<figcaption>generated image</figcaption>", html)
+        html = _html(_turn(), self._call(self.PNG), max_image_mb=0.0001)
+        self.assertNotIn("<img src=", html)
+        self.assertIn("1 tool image", html)
+
+    def test_missing_result_is_not_success(self) -> None:
+        events = _events(_turn(), self._call(None, status="failed"))
+        output = next(e for e in events if e["type"] == "tool_output")
+        self.assertEqual(output["attachments"], [])
+        self.assertIs(output["failed"], True)
+
+
 if __name__ == "__main__":
     unittest.main()

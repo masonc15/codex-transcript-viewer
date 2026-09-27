@@ -153,9 +153,9 @@ _IGNORED_ITEM_COMPLETED = {
 _HANDLED_RESPONSE_ITEM = {
     "function_call", "function_call_output", "custom_tool_call",
     "custom_tool_call_output", "web_search_call", "tool_search_call",
-    "tool_search_output", "message", "reasoning",
+    "tool_search_output", "message", "reasoning", "image_generation_call",
 }
-_IGNORED_RESPONSE_ITEM = {"ghost_snapshot", "image_generation_call", "agent_message"}
+_IGNORED_RESPONSE_ITEM = {"ghost_snapshot", "agent_message"}
 _IGNORED_TOP_LEVEL = {
     "token_usage_record", "turn_context", "compacted", "world_state",
     "inter_agent_communication_metadata",
@@ -788,6 +788,54 @@ def _handle_response_item(
                     "_turn_seq": turn_seq,
                 }
             )
+    elif item_type == "image_generation_call":
+        _handle_image_generation(payload, ts, events, turn_seq)
+
+
+_IMAGE_BASE64_TYPES = (("iVBORw0KGgo", "png"), ("/9j/", "jpeg"), ("UklGR", "webp"), ("R0lGOD", "gif"))
+
+
+def _handle_image_generation(
+    payload: dict[str, Any], ts: str, events: list[dict], turn_seq: int
+) -> None:
+    """Show an image generation as a tool call whose output is the image."""
+    call_id = _as_text(payload.get("id")) or f"image-generation-{len(events)}"
+    events.append(
+        {
+            "type": "tool_call",
+            "ts": ts,
+            "name": "image_generation",
+            "arguments": _as_text(payload.get("revised_prompt")) or "(no prompt recorded)",
+            "input_kind": "image_generation",
+            "call_id": call_id,
+            "_source": "response_item",
+            "_turn_seq": turn_seq,
+        }
+    )
+    result = payload.get("result")
+    attachments = []
+    if isinstance(result, str) and result:
+        kind = next((k for prefix, k in _IMAGE_BASE64_TYPES if result.startswith(prefix)), None)
+        attachment = {"kind": "image", "bytes": _data_url_bytes("," + result), "label": "generated image"}
+        if kind:
+            attachment["data_url"] = f"data:image/{kind};base64,{result}"
+        attachments.append(attachment)
+    status = _as_text(payload.get("status"))
+    events.append(
+        {
+            "type": "tool_output",
+            "ts": ts,
+            "call_id": call_id,
+            "output": "" if attachments else f"(no image recorded; status {status or 'unknown'})",
+            "attachments": attachments,
+            "exit_codes": [],
+            "failed": False if attachments else (True if status == "failed" else None),
+            "duration": None,
+            "_source": "response_item",
+            "_turn_seq": turn_seq,
+        }
+    )
+
 
 _TOOL_EVENT_TYPES = {"tool_call", "tool_output"}
 

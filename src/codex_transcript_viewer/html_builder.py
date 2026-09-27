@@ -211,7 +211,7 @@ def _format_bytes(n: int) -> str:
 def _image_label(attachment: dict, default: str) -> str:
     if attachment.get("kind") == "local_image" and attachment.get("path"):
         return _basename(attachment["path"])
-    return default
+    return attachment.get("label") or default
 
 
 def _within_image_budget(url: str, ctx: RenderContext) -> bool:
@@ -419,7 +419,7 @@ def _status_badge(output: dict, status: str) -> str:
 
 def _render_tool_call(evt, ts, anchor, sidebar, messages, ctx):
     name = evt["name"]
-    custom = evt.get("input_kind") in ("custom", "web_search", "tool_search")
+    custom = evt.get("input_kind") in ("custom", "web_search", "tool_search", "image_generation")
     if custom:
         args_preview = _custom_input_preview(name, evt["arguments"])
     else:
