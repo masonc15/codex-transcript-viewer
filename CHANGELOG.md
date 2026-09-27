@@ -2,19 +2,14 @@
 
 ## 0.2.0
 
-This release makes the viewer work on sessions from current Codex versions, which it had been quietly mangling.
+It's been a while since I updated this, and Codex has changed a lot in the meantime, so these fixes are long overdue. Newer sessions were missing most of what actually happened.
 
-Prompts are back. Codex 0.135 and later record what you type as `item_completed` records, which the viewer ignored, so newer sessions showed no prompts at all. It now reads them, while still skipping the injected context (environment, AGENTS.md, skills) that Codex feeds the model alongside your words. Thanks to joebb97 (#3) and khoi for reporting this and sending fixes.
-
-Tool calls are complete and honest. Code-mode `exec`, `apply_patch`, web searches and tool searches now render; before, most tool activity in newer sessions was missing. Calls and results are paired, and the color reflects the real exit status: green for success, red for failure, neutral when the log doesn't say. Previously everything looked successful. Tool parameters show as a readable name/value grid, from khoi.
-
-Images render. Screenshots returned by tools used to be dumped into the page as raw base64 text, which is most of why some pages ran to 36 MB. They're now proper images, embedded up to a 25 MB budget with a note when some are left out. Images attached to prompts are embedded from the copy saved in the session log. New options: `--max-image-mb`, `--no-images`, and `--max-output-chars`.
-
-Duplicate filtering no longer depends on how many tool calls sit between two copies of the same message, which had let duplicate commentary, token counts and final answers through. The Answers filter now finds every final answer.
-
-Subagent threads show the agent's name and parent, and history copied from a parent session is folded away instead of appearing as the subagent's own work. The header also stopped showing the parent's session id for those threads.
-
-The viewer reports record types it doesn't recognize on stderr, so format changes don't go unnoticed.
+- Prompts show up again. Codex 0.135 and later store them as `item_completed` records, which the viewer never read. Injected context like the environment block, AGENTS.md and skill text stays out. Thanks to joebb97, who opened #3, and to khoi for reporting it.
+- Tool calls now render in full, including code-mode `exec`, `apply_patch`, web searches and tool searches. The viewer colors each result by its real exit status. khoi contributed the name/value grid for tool parameters.
+- Tool screenshots render as images. The viewer used to dump them into the page as raw base64, which is why some pages hit 36 MB. It now embeds up to 25 MB of images per page. New flags: `--max-image-mb`, `--no-images`, `--max-output-chars`.
+- Duplicate messages no longer slip through when tool calls sit between the two copies, and the Answers filter finds every final answer.
+- Subagent threads show the agent and its parent thread. History copied from the parent sits in a collapsed block.
+- The viewer prints record types it doesn't recognize to stderr, so the next Codex format change shows up right away.
 
 ## 0.1.0
 
