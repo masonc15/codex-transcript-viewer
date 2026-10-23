@@ -39,6 +39,10 @@ _SQL_KEYWORDS = (
 )
 
 _STRINGS = r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\''
+# Multi-line constructs (block comments, triple-quoted and template strings)
+# run to the end of the code when unclosed, as an editor shows them. Requiring
+# the closer would rescan the rest of the code from every opener.
+_BLOCK_COMMENT = r"/\*[\s\S]*?(?:\*/|\Z)"
 _NUMBER = r"\b(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b"
 
 
@@ -51,10 +55,10 @@ def _spec(comment: str, strings: str, keywords: str, flags: int = 0) -> re.Patte
     )
 
 
-_PYTHON = _spec(r"#[^\n]*", r'[rRbBfFuU]{0,2}(?:"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|' + _STRINGS + ")", _PY_KEYWORDS)
+_PYTHON = _spec(r"#[^\n]*", r'[rRbBfFuU]{0,2}(?:"""[\s\S]*?(?:"""|\Z)|\'\'\'[\s\S]*?(?:\'\'\'|\Z)|' + _STRINGS + ")", _PY_KEYWORDS)
 _SHELL = _spec(r"(?<![\w$\\{])#[^\n]*", _STRINGS, _SHELL_KEYWORDS)
-_JS = _spec(r"//[^\n]*|/\*[\s\S]*?\*/", _STRINGS + r"|`(?:[^`\\]|\\.)*`", _JS_KEYWORDS)
-_C_LIKE = _spec(r"//[^\n]*|/\*[\s\S]*?\*/", _STRINGS, _C_LIKE_KEYWORDS)
+_JS = _spec(r"//[^\n]*|" + _BLOCK_COMMENT, _STRINGS + r"|`(?:[^`\\]|\\.)*(?:`|\Z)", _JS_KEYWORDS)
+_C_LIKE = _spec(r"//[^\n]*|" + _BLOCK_COMMENT, _STRINGS, _C_LIKE_KEYWORDS)
 _JSON = _spec(r"(?!)", r'"(?:[^"\\\n]|\\.)*"', "true false null")
 _CONFIG = _spec(r"#[^\n]*", _STRINGS, "true false yes no null on off")
 _SQL = _spec(r"--[^\n]*", _STRINGS, _SQL_KEYWORDS, re.IGNORECASE)
