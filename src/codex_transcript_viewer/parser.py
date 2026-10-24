@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import ast
 import json
+import math
 import re
 from collections import Counter
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -319,7 +321,7 @@ def _handle_event_msg(
             {
                 "type": "thread_rolled_back",
                 "ts": ts,
-                "num_turns": payload.get("num_turns", 0),
+                "num_turns": _count(payload.get("num_turns")),
                 "_source": "event_msg",
                 "_turn_seq": turn_seq,
             }
@@ -342,6 +344,17 @@ def _handle_event_msg(
                 "_turn_seq": turn_seq,
             }
         )
+
+
+def _count(value: Any) -> int | None:
+    """A non-negative integer count, or None for anything else."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, float) and math.isfinite(value) and value >= 0 and value.is_integer():
+        return int(value)
+    return None
 
 
 def _goal_event(goal: dict, ts: str, turn_seq: int) -> dict:

@@ -80,7 +80,9 @@ def build_html(
     inherited_run = 0
     for i, evt in enumerate(events):
         etype = evt["type"]
-        ts = format_ts(evt["ts"])
+        # Everything interpolated into the page is escaped, timestamps included:
+        # an unparseable one is shown as written.
+        ts = escape(format_ts(evt.get("ts")))
         msg_idx += 1
         anchor = f"msg-{msg_idx}"
 
@@ -601,7 +603,8 @@ def _render_turn_aborted(evt, ts, anchor, sidebar, messages, ctx):
 
 
 def _render_thread_rolled_back(evt, ts, anchor, sidebar, messages, ctx):
-    n = evt["num_turns"]
+    n = evt.get("num_turns")
+    n = str(n) if isinstance(n, int) and not isinstance(n, bool) else "?"
     sidebar.append(
         f'<a class="tree-node tree-role-system" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
