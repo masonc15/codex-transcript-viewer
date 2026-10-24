@@ -302,6 +302,11 @@ def _render_attachments(
     return f'<div class="attachments">{"".join(parts)}</div>'
 
 
+def _source_attr(evt: dict) -> str:
+    source = evt.get("source")
+    return f' data-source="{source}"' if source in ("response", "event") else ""
+
+
 def _render_user_message(evt, ts, anchor, sidebar, messages, ctx):
     attachments = evt.get("attachments") or []
     text = evt["text"]
@@ -309,7 +314,7 @@ def _render_user_message(evt, ts, anchor, sidebar, messages, ctx):
     if not text_preview and attachments:
         text_preview = "[attachment only]"
     sidebar.append(
-        f'<a class="tree-node tree-role-user" data-kind="user" href="#{anchor}">'
+        f'<a class="tree-node tree-role-user" data-kind="user"{_source_attr(evt)} href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
         f'<span class="tree-content">\U0001f464 {escape(text_preview)}</span></a>'
     )
@@ -329,7 +334,7 @@ def _render_user_message(evt, ts, anchor, sidebar, messages, ctx):
 
 def _render_reasoning(evt, ts, anchor, sidebar, messages, ctx):
     sidebar.append(
-        f'<a class="tree-node tree-role-thinking" href="#{anchor}">'
+        f'<a class="tree-node tree-role-thinking"{_source_attr(evt)} href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
         f'<span class="tree-content">\U0001f4ad {escape(evt["text"].replace("**", "")[:60])}</span></a>'
     )
@@ -342,8 +347,11 @@ def _render_reasoning(evt, ts, anchor, sidebar, messages, ctx):
 
 
 def _render_agent_commentary(evt, ts, anchor, sidebar, messages, ctx):
+    if evt.get("final"):
+        _render_task_complete(evt, ts, anchor, sidebar, messages, ctx)
+        return
     sidebar.append(
-        f'<a class="tree-node tree-role-assistant" href="#{anchor}">'
+        f'<a class="tree-node tree-role-assistant" data-kind="commentary"{_source_attr(evt)} href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
         f'<span class="tree-content">\U0001f4ac {escape(_reply_preview(evt["text"]))}</span></a>'
     )
@@ -356,13 +364,16 @@ def _render_agent_commentary(evt, ts, anchor, sidebar, messages, ctx):
 
 
 def _render_assistant_text(evt, ts, anchor, sidebar, messages, ctx):
-    if evt.get("phase") == "final_answer":
+    if evt.get("phase") == "final_answer" or evt.get("final"):
         _render_task_complete(evt, ts, anchor, sidebar, messages, ctx)
+        return
+    if evt.get("phase") == "commentary":
+        _render_agent_commentary(evt, ts, anchor, sidebar, messages, ctx)
         return
     phase_label = f' ({evt["phase"]})' if evt.get("phase") else ""
     preview = _reply_preview(evt["text"])
     sidebar.append(
-        f'<a class="tree-node tree-role-assistant" data-kind="assistant" href="#{anchor}">'
+        f'<a class="tree-node tree-role-assistant" data-kind="assistant"{_source_attr(evt)} href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
         f'<span class="tree-content">\U0001f916 {escape(preview)}</span></a>'
     )
@@ -573,7 +584,7 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages, ctx):
 def _render_task_complete(evt, ts, anchor, sidebar, messages, ctx):
     preview = _reply_preview(evt["text"])
     sidebar.append(
-        f'<a class="tree-node tree-role-assistant" data-kind="final-answer" href="#{anchor}">'
+        f'<a class="tree-node tree-role-assistant" data-kind="final-answer"{_source_attr(evt)} href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
         f'<span class="tree-content">\u2705 {escape(preview)}</span></a>'
     )
@@ -587,7 +598,7 @@ def _render_task_complete(evt, ts, anchor, sidebar, messages, ctx):
 
 def _render_task_started(evt, ts, anchor, sidebar, messages, ctx):
     sidebar.append(
-        f'<a class="tree-node tree-role-system" href="#{anchor}">'
+        f'<a class="tree-node tree-role-system" data-kind="turn" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
         f'<span class="tree-content">\u25b6 Turn started</span></a>'
     )

@@ -46,8 +46,22 @@ class HtmlBuilderTests(unittest.TestCase):
 
         self.assertEqual(html.count('data-kind="final-answer"'), 2)
         self.assertEqual(html.count('data-kind="user"'), 1)
-        self.assertEqual(html.count('data-kind="assistant"'), 1)
+        self.assertEqual(html.count('data-kind="commentary"'), 1)
+        self.assertIn('<div class="commentary-message"', html)
         self.assertIn("node.dataset.kind === 'final-answer'", html)
+
+    def test_turns_and_sources_are_marked_for_the_visual_review(self) -> None:
+        html = build_html(
+            {"id": "s"},
+            [
+                {"type": "task_started", "ts": "", "turn_id": "t"},
+                {"type": "agent_commentary", "ts": "", "text": "Turn started", "source": "event"},
+                {"type": "assistant_text", "ts": "", "text": "a", "phase": "", "source": "response"},
+            ],
+        )
+        self.assertEqual(html.count('data-kind="turn"'), 1)
+        self.assertIn('data-kind="commentary" data-source="event"', html)
+        self.assertIn('data-kind="assistant" data-source="response"', html)
 
 
 if __name__ == "__main__":

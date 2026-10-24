@@ -127,11 +127,14 @@ def extract_conversation(
                 )
             continue
 
+    # Prompts are reconciled before images are attached, so a dropped copy
+    # never takes the image the surviving prompt should get.
+    raw_events = _drop_legacy_prompts_shadowed_by_items(raw_events)
     raw_events = _attach_model_input_images(raw_events)
     raw_events = _apply_exec_status(raw_events)
     raw_events = _drop_repeated_reasoning_summaries(raw_events)
     raw_events = _drop_unchanged_goal_updates(raw_events)
-    raw_events = _keep_turn_settings_changes(raw_events)
+    raw_events = _keep_turn_settings_changes(raw_events, inherited_turns)
     reconciled = _mark_reviews_repeated_by_reply(_reconcile_events(raw_events))
     for event in reconciled:
         if event.get("_turn_seq") in inherited_turns:
@@ -423,15 +426,24 @@ def _drop_unchanged_goal_updates(events: list[dict]) -> list[dict]:
     return kept
 
 
-def _keep_turn_settings_changes(events: list[dict]) -> list[dict]:
+def _keep_turn_settings_changes(
+    events: list[dict], inherited_turns: set[int] | frozenset = frozenset()
+) -> list[dict]:
     """Keep the first turn's model and effort, then only turns that change them.
 
     Codex records both at the start of every turn; most sessions never change.
+    A forked subagent's own turns start over, so its first settings survive
+    even when they match the inherited history's last ones.
     """
     kept = []
     last: tuple[str, str] | None = None
+    last_inherited: bool | None = None
     for event in events:
         if event.get("type") == "turn_settings":
+            inherited = event.get("_turn_seq") in inherited_turns
+            if inherited != last_inherited:
+                last = None
+                last_inherited = inherited
             key = (event["model"], event["effort"])
             if key == last:
                 continue
@@ -1027,19 +1039,25 @@ def _handle_response_item(
     # event_msg user_message (CLI <= 0.125) or item_completed UserMessage.
     elif item_type == "message" and role == "assistant":
         content = payload.get("content")
-        phase = payload.get("phase", "")
-        for block in content if isinstance(content, list) else []:
-            if isinstance(block, dict) and block.get("type") == "output_text":
-                events.append(
-                    {
-                        "type": "assistant_text",
-                        "ts": ts,
-                        "text": _as_text(block.get("text", "")),
-                        "phase": _as_text(phase),
-                        "_source": "response_item",
-                        "_turn_seq": turn_seq,
-                    }
-                )
+        texts = [
+            _as_text(block.get("text", ""))
+            for block in (content if isinstance(content, list) else [])
+            if isinstance(block, dict) and block.get("type") == "output_text"
+        ]
+        if texts:
+            # One message is one entry, however many text blocks it arrived in;
+            # its event copies carry the blocks joined.
+            event = {
+                "type": "assistant_text",
+                "ts": ts,
+                "text": "\n\n".join(texts),
+                "phase": _as_text(payload.get("phase", "")),
+                "_source": "response_item",
+                "_turn_seq": turn_seq,
+            }
+            if len(texts) > 1:
+                event["_joined_tight"] = "".join(texts)
+            events.append(event)
     elif item_type == "reasoning":
         summary = payload.get("summary")
         texts = [
@@ -1200,118 +1218,190 @@ def _event_copy_text(response_text: Any) -> str:
     return _normalize_text(_EVENT_COPY_OMITS_RE.sub("", _as_text(response_text)))
 
 
-def _is_response_counterpart(candidate: dict, response_event: dict) -> bool:
-    if response_event.get("_source") != "response_item":
-        return False
-    if candidate.get("_turn_seq") != response_event.get("_turn_seq"):
-        return False
-
-    candidate_type = candidate.get("type")
-    candidate_text = _normalize_text(candidate.get("text", ""))
-    response_text = _normalize_text(response_event.get("text", ""))
-    if candidate_type == "reasoning":
-        return response_event.get("type") == "reasoning" and candidate_text == response_text
-    if candidate_type not in ("agent_commentary", "task_complete"):
-        return False
-    if response_event.get("type") != "assistant_text":
-        return False
-    # Older sessions log each assistant message, final answers included, as an
-    # agent_message; task_complete repeats the turn's last message.
-    if candidate_text in (response_text, _event_copy_text(response_event.get("text", ""))):
-        return True
-    # task_complete may also cut a final answer short before a trailing block.
-    return (
-        candidate_type == "task_complete"
-        and response_event.get("phase") == "final_answer"
-        and bool(candidate_text)
-        and response_text.startswith(candidate_text)
-    )
-
-
 _MATCHABLE_EVENT_MSG_TYPES = {"agent_commentary", "reasoning", "task_complete"}
-_RESPONSE_COUNTERPART_TYPES = {"assistant_text", "reasoning"}
+_MESSAGE_TYPES = {"agent_commentary", "assistant_text"}
 
 
-def _find_matching_response_index(
-    events: list[dict],
-    idx: int,
-    turn_pool: list[int],
-    used_indices: set[int],
-) -> int | None:
-    """Return the nearest unused same-turn response_item duplicating events[idx].
+class _ResponseIndex:
+    """Each turn's response_item messages and reasoning, looked up by text.
 
-    The pool holds only response-side message and reasoning events, so tool
-    events never push a counterpart out of reach. task_complete repeats a
-    message that its agent_message copy may already have matched, so it may
-    match a used response too.
+    An event_msg copy matches a same-turn response with the same normalized
+    text. Older sessions log each assistant message, final answers included,
+    as an agent_message, and task_complete repeats the turn's last message;
+    those copies leave out proposed-plan and memory-citation blocks, and
+    task_complete may cut a final answer short before a trailing block.
+    Looking candidates up by text keeps long turns linear.
     """
-    candidate = events[idx]
-    if candidate.get("_source") != "event_msg":
-        return None
-    if candidate.get("type") not in _MATCHABLE_EVENT_MSG_TYPES:
-        return None
 
-    for j in sorted(turn_pool, key=lambda j: abs(j - idx)):
-        if j in used_indices and candidate.get("type") != "task_complete":
-            continue
-        if _is_response_counterpart(candidate, events[j]):
-            return j
-    return None
+    def __init__(self, events: list[dict]) -> None:
+        self.reasoning: dict[tuple, list[int]] = {}
+        self.messages: dict[tuple, list[int]] = {}
+        self.finals: dict[Any, list[tuple[int, str]]] = {}
+        for idx, event in enumerate(events):
+            if event.get("_source") != "response_item":
+                continue
+            turn = event.get("_turn_seq")
+            if event.get("type") == "reasoning":
+                key = (turn, _normalize_text(event.get("text", "")))
+                self.reasoning.setdefault(key, []).append(idx)
+            elif event.get("type") == "assistant_text":
+                text = event.get("text", "")
+                full = _normalize_text(text)
+                keys = {full, _event_copy_text(text)}
+                if "_joined_tight" in event:
+                    keys |= {_normalize_text(event["_joined_tight"]), _event_copy_text(event["_joined_tight"])}
+                for key in keys:
+                    self.messages.setdefault((turn, key), []).append(idx)
+                if event.get("phase") == "final_answer":
+                    self.finals.setdefault(turn, []).append((idx, full))
+
+    def match(self, idx: int, event: dict, used: set[int]) -> int | None:
+        """The nearest unused counterpart of events[idx], earlier one on a tie.
+
+        task_complete repeats a message that its agent_message copy may
+        already have matched, so it may match a used response too.
+        """
+        kind = event.get("type")
+        turn = event.get("_turn_seq")
+        text = _normalize_text(event.get("text", ""))
+        if kind == "reasoning":
+            options = self.reasoning.get((turn, text), [])
+        else:
+            options = list(self.messages.get((turn, text), []))
+            if kind == "task_complete" and text:
+                options += [j for j, full in self.finals.get(turn, []) if full.startswith(text)]
+        best: tuple[int, int] | None = None
+        for j in options:
+            if j in used and kind != "task_complete":
+                continue
+            if best is None or (abs(j - idx), j) < best:
+                best = (abs(j - idx), j)
+        return None if best is None else best[1]
 
 
 def _drop_overlapped_event_msg_events(events: list[dict]) -> list[dict]:
-    pools: dict[Any, list[int]] = {}
-    for idx, event in enumerate(events):
-        if (
-            event.get("_source") == "response_item"
-            and event.get("type") in _RESPONSE_COUNTERPART_TYPES
-        ):
-            pools.setdefault(event.get("_turn_seq"), []).append(idx)
-
+    index = _ResponseIndex(events)
     filtered: list[dict] = []
-    used_response_indices: set[int] = set()
-
+    used: set[int] = set()
     for idx, event in enumerate(events):
-        if event.get("type") == "task_complete" and not _normalize_text(event.get("text", "")):
+        etype = event.get("type")
+        if etype == "task_complete" and not _normalize_text(event.get("text", "")):
             continue
-
-        match_idx = _find_matching_response_index(
-            events, idx, pools.get(event.get("_turn_seq"), []), used_response_indices
-        )
-        if match_idx is not None:
-            if event.get("type") != "task_complete":
-                used_response_indices.add(match_idx)
-            continue
-
+        if event.get("_source") == "event_msg" and etype in _MATCHABLE_EVENT_MSG_TYPES:
+            match = index.match(idx, event, used)
+            if match is not None:
+                if etype == "task_complete":
+                    # The message it repeats is the turn's answer, phase or not.
+                    events[match]["final"] = True
+                else:
+                    used.add(match)
+                continue
         filtered.append(event)
+    return _fold_task_complete_into_messages(filtered)
 
-    return filtered
+
+def _fold_task_complete_into_messages(events: list[dict]) -> list[dict]:
+    """Drop a task_complete that repeats the turn's last surviving message.
+
+    Event-only sessions log the last message as an agent_message and again as
+    task_complete, with no response_item for either to match.
+    """
+    kept: list[dict] = []
+    for event in events:
+        if event.get("type") == "task_complete":
+            text = _normalize_text(event.get("text", ""))
+            for prior in reversed(kept):
+                if prior.get("_turn_seq") != event.get("_turn_seq"):
+                    break
+                if prior.get("type") not in _MESSAGE_TYPES:
+                    continue
+                prior_text = prior.get("text", "")
+                if text in (_normalize_text(prior_text), _event_copy_text(prior_text)) or (
+                    _normalize_text(prior_text).startswith(text)
+                ):
+                    prior["final"] = True
+                    event = None
+                break
+            if event is None:
+                continue
+        kept.append(event)
+    return kept
+
+
+def _is_final(event: dict) -> bool:
+    return (
+        event.get("type") == "task_complete"
+        or event.get("final") is True
+        or (event.get("type") == "assistant_text" and event.get("phase") == "final_answer")
+    )
+
+
+def _mark_unphased_final_answers(events: list[dict]) -> list[dict]:
+    """Mark the answer of each exchange whose log never says which message it is.
+
+    Sessions from before assistant messages carried a phase, and before
+    task_complete repeated the answer, only show it by position: the last
+    unphased message of an exchange, when no tool call follows it and the turn
+    wasn't aborted. An exchange starts at each turn and at each prompt.
+    """
+    segment: list[dict] = []
+
+    def close() -> None:
+        if not segment or any(_is_final(e) or e.get("type") == "turn_aborted" for e in segment):
+            return
+        for event in reversed(segment):
+            if event.get("type") == "tool_call":
+                return
+            if event.get("type") in _MESSAGE_TYPES:
+                if not event.get("phase"):
+                    event["final"] = True
+                return
+
+    for event in events:
+        if event.get("type") in ("task_started", "user_message"):
+            close()
+            segment = []
+        segment.append(event)
+    close()
+    return events
 
 
 def _drop_legacy_prompts_shadowed_by_items(events: list[dict]) -> list[dict]:
-    """Keep one prompt source per turn if a session ever records both."""
-    item_turns = {
-        event.get("_turn_seq")
-        for event in events
-        if event.get("type") == "user_message"
-        and event.get("_source_kind") == "item_completed"
-    }
-    return [
-        event
-        for event in events
-        if not (
-            event.get("type") == "user_message"
-            and event.get("_source_kind") == "user_message"
-            and event.get("_turn_seq") in item_turns
-        )
-    ]
+    """Drop a legacy prompt when an item prompt in its turn has the same text.
+
+    No session has been seen recording both, but if one does, a legacy prompt
+    with different text is a separate prompt and stays.
+    """
+    item_texts: dict[Any, Counter] = {}
+    for event in events:
+        if event.get("type") == "user_message" and event.get("_source_kind") == "item_completed":
+            item_texts.setdefault(event.get("_turn_seq"), Counter())[_normalize_text(event.get("text"))] += 1
+    if not item_texts:
+        return events
+    kept = []
+    for event in events:
+        if event.get("type") == "user_message" and event.get("_source_kind") == "user_message":
+            texts = item_texts.get(event.get("_turn_seq"))
+            key = _normalize_text(event.get("text"))
+            if texts and texts[key] > 0:
+                texts[key] -= 1
+                continue
+        kept.append(event)
+    return kept
 
 
 def _reconcile_events(events: list[dict]) -> list[dict]:
     merged = _merge_adjacent_token_events(events)
-    deduped = _drop_overlapped_event_msg_events(merged)
-    return _drop_legacy_prompts_shadowed_by_items(deduped)
+    return _mark_unphased_final_answers(_drop_overlapped_event_msg_events(merged))
+
+
+_SOURCED_TYPES = {"user_message", "agent_commentary", "assistant_text", "task_complete", "reasoning"}
 
 
 def _strip_internal_keys(event: dict) -> dict:
-    return {k: v for k, v in event.items() if not k.startswith("_")}
+    cleaned = {k: v for k, v in event.items() if not k.startswith("_")}
+    # Which stream a message came from: "response" is what the model wrote,
+    # "event" a copy Codex logged for the UI. The visual review uses it.
+    if event.get("type") in _SOURCED_TYPES and event.get("_source"):
+        cleaned["source"] = "response" if event["_source"] == "response_item" else "event"
+    return cleaned
