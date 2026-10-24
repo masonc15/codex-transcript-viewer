@@ -86,5 +86,18 @@ class ToolOutputRenderTests(unittest.TestCase):
         self.assertIn("&lt;script&gt;", html)
 
 
+class EnvelopeFieldTests(unittest.TestCase):
+    def test_unknown_fields_next_to_output_are_kept(self) -> None:
+        result = normalize_tool_output('{"output": "hello", "important": "kept", "items": [1, 2]}')
+        self.assertIn("hello", result["output"])
+        self.assertIn('"important": "kept"', result["output"])
+        self.assertIn('"items"', result["output"])
+
+    def test_codex_envelope_shows_only_the_output(self) -> None:
+        raw = json.dumps({"chunk_id": "a", "exit_code": 0, "output": "hit", "wall_time_seconds": 0.1,
+                          "metadata": {"exit_code": 0}})
+        self.assertEqual(normalize_tool_output(raw)["output"], "hit")
+
+
 if __name__ == "__main__":
     unittest.main()

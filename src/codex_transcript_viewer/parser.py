@@ -717,6 +717,9 @@ def _exit_code(value: Any) -> int | None:
 
 
 _TRUNCATION_NOTICE = "Warning: truncated output"
+# Keys of the JSON wrappers Codex puts around shell and apply_patch output.
+# Anything else in an object with an "output" key is shown, not dropped.
+_ENVELOPE_KEYS = {"output", "metadata", "exit_code", "chunk_id", "wall_time_seconds"}
 
 
 def normalize_tool_output(value: Any) -> dict:
@@ -744,12 +747,16 @@ def normalize_tool_output(value: Any) -> dict:
         obj = _json_object(text)
         if obj is not None and "output" in obj:
             texts.append(_as_text(obj.get("output")))
+            # Fields outside Codex's own envelope belong to the tool's result.
+            extras = {k: v for k, v in obj.items() if k not in _ENVELOPE_KEYS}
+            if extras:
+                texts.append(json.dumps(extras, ensure_ascii=False, indent=2))
             code = _exit_code(obj.get("exit_code"))
             metadata = obj.get("metadata")
             if isinstance(metadata, dict):
                 code = code if code is not None else _exit_code(metadata.get("exit_code"))
                 seconds = metadata.get("duration_seconds")
-                if isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
+                if _finite_number(seconds):
                     duration = float(seconds)
             if code is not None:
                 exit_codes.append(code)
