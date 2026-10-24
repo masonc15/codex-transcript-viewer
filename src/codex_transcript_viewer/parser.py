@@ -203,7 +203,8 @@ _HANDLED_RESPONSE_ITEM = {
     "custom_tool_call_output", "web_search_call", "tool_search_call",
     "tool_search_output", "message", "reasoning", "image_generation_call",
 }
-_IGNORED_RESPONSE_ITEM = {"ghost_snapshot", "agent_message"}
+# additional_tools lists tool definitions sent to the model mid-session.
+_IGNORED_RESPONSE_ITEM = {"ghost_snapshot", "agent_message", "additional_tools"}
 _HANDLED_TOP_LEVEL = {"session_meta", "event_msg", "response_item", "turn_context"}
 _IGNORED_TOP_LEVEL = {
     "token_usage_record", "compacted", "world_state",
