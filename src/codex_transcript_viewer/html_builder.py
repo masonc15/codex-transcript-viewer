@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -65,13 +66,15 @@ def build_html(
             ctx.outputs_by_call.setdefault(call_id, evt)
         elif evt["type"] == "tool_call":
             ctx.names_by_call.setdefault(call_id, evt.get("name", ""))
-    session_id = meta.get("id", "unknown") if meta else "unknown"
+    meta = meta if isinstance(meta, dict) else {}
+    git = meta.get("git") if isinstance(meta.get("git"), dict) else {}
+    session_id = _text(meta.get("id")) or "unknown"
     model = _session_model(meta, events)
-    cli_version = meta.get("cli_version", "") if meta else ""
-    cwd = meta.get("cwd", "") if meta else ""
-    branch = meta.get("git", {}).get("branch", "") if meta else ""
-    commit = (meta.get("git", {}).get("commit_hash", "") or "")[:12] if meta else ""
-    session_ts = meta.get("timestamp", "") if meta else ""
+    cli_version = _text(meta.get("cli_version"))
+    cwd = _text(meta.get("cwd"))
+    branch = _text(git.get("branch"))
+    commit = _text(git.get("commit_hash"))[:12]
+    session_ts = meta.get("timestamp")
 
     sidebar_items: list[str] = []
     message_blocks: list[str] = []
@@ -136,6 +139,15 @@ def build_html(
     )
 
 
+def _text(value) -> str:
+    """A metadata value as display text: strings and numbers, nothing else."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    return ""
+
+
 def _session_model(meta: dict | None, events: list[dict]) -> str:
     """The first turn's model and effort, falling back to the provider name.
 
@@ -146,7 +158,7 @@ def _session_model(meta: dict | None, events: list[dict]) -> str:
     if first:
         effort = f" ({first['effort']} effort)" if first.get("effort") else ""
         return first["model"] + effort
-    return meta.get("model_provider", "") if meta else ""
+    return _text(meta.get("model_provider")) if meta else ""
 
 
 def _subagent_info_html(meta: dict | None, events: list[dict]) -> str:
@@ -157,12 +169,12 @@ def _subagent_info_html(meta: dict | None, events: list[dict]) -> str:
     sub = source["subagent"]
     spawn = sub.get("thread_spawn") if isinstance(sub, dict) else None
     if isinstance(spawn, dict):
-        name = spawn.get("agent_nickname") or "subagent"
+        name = _text(spawn.get("agent_nickname")) or "subagent"
         details = [str(spawn.get(k)) for k in ("agent_path", "agent_role") if spawn.get(k)]
         if spawn.get("depth") is not None:
             details.append(f"depth {spawn['depth']}")
         label = name + (f" ({', '.join(details)})" if details else "")
-        parent = spawn.get("parent_thread_id") or ""
+        parent = _text(spawn.get("parent_thread_id"))
     else:
         kind = sub.get("other") if isinstance(sub, dict) else sub
         label = str(kind or "subagent")
@@ -620,7 +632,9 @@ def _render_thread_rolled_back(evt, ts, anchor, sidebar, messages, ctx):
 
 def _token_total(total: dict, key: str) -> int:
     value = total.get(key)
-    return int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+        return int(value)
+    return 0
 
 
 def _render_token_count(evt, ts, anchor, sidebar, messages, ctx):

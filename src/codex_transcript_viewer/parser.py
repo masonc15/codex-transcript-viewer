@@ -28,31 +28,50 @@ def _as_text(value: Any) -> str:
     return ""
 
 
+def parse_lines(lines: Iterable[str]) -> Iterator[dict]:
+    """Parse JSONL lines into records, skipping blank, malformed and non-object lines.
+
+    A session still being written can end mid-line, and old logs can hold
+    stray bytes, so neither stops the rest of the file from rendering.
+    """
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, RecursionError):
+            continue
+        if isinstance(entry, dict):
+            yield entry
+
+
+def iter_jsonl(path: str | Path) -> Iterator[dict]:
+    """Stream the records of a JSONL file; invalid UTF-8 is replaced, not fatal."""
+    with open(path, encoding="utf-8", errors="replace") as f:
+        yield from parse_lines(f)
+
+
 def parse_jsonl(path: str | Path) -> list[dict]:
     """Read a JSONL file and return a list of parsed JSON objects."""
-    entries = []
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entries.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    return entries
+    return list(iter_jsonl(path))
+
+
+def _finite_number(value: Any) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
 
 
 def _has_positive_usage(total: dict[str, Any]) -> bool:
     """Return True when total token usage contains any positive numeric value."""
-    return any(
-        isinstance(value, (int, float)) and value > 0
-        for value in total.values()
-    )
+    return any(_finite_number(value) and value > 0 for value in total.values())
 
 
 def extract_conversation(
-    entries: list[dict],
+    entries: Iterable[dict],
 ) -> tuple[dict | None, list[dict]]:
     """Extract session metadata and meaningful conversation events.
 
@@ -66,14 +85,18 @@ def extract_conversation(
     inherited_turns: set[int] = set()
 
     for entry in entries:
-        ts = entry.get("timestamp", "")
+        if not isinstance(entry, dict):
+            continue
+        ts = entry.get("timestamp")
+        ts = ts if isinstance(ts, str) else ""
         etype = entry.get("type", "")
-        payload = entry.get("payload") or {}
+        payload = entry.get("payload")
+        payload = payload if isinstance(payload, dict) else {}
 
         if etype == "session_meta":
             # A forked subagent log also carries its parent's session_meta;
             # the first record describes this session.
-            if meta is None:
+            if meta is None and payload:
                 meta = payload
             continue
 
@@ -188,30 +211,38 @@ _IGNORED_TOP_LEVEL = {
 }
 
 
-def unrecognized_record_kinds(entries: list[dict]) -> Counter:
+def unrecognized_kind(entry: Any) -> str | None:
+    """The record kind of entry if it is neither parsed nor deliberately ignored."""
+    if not isinstance(entry, dict):
+        return None
+    etype = entry.get("type")
+    payload = entry.get("payload")
+    subtype = payload.get("type") if isinstance(payload, dict) else None
+    if etype == "session_meta":
+        return None
+    if etype == "event_msg":
+        if subtype == "item_completed":
+            item = payload.get("item")
+            kind = item.get("type") if isinstance(item, dict) else None
+            if kind not in _HANDLED_ITEM_COMPLETED and kind not in _IGNORED_ITEM_COMPLETED:
+                return f"item_completed/{kind}"
+        elif subtype not in _HANDLED_EVENT_MSG and subtype not in _IGNORED_EVENT_MSG:
+            return f"event_msg/{subtype}"
+    elif etype == "response_item":
+        if subtype not in _HANDLED_RESPONSE_ITEM and subtype not in _IGNORED_RESPONSE_ITEM:
+            return f"response_item/{subtype}"
+    elif etype not in _HANDLED_TOP_LEVEL and etype not in _IGNORED_TOP_LEVEL:
+        return str(etype)
+    return None
+
+
+def unrecognized_record_kinds(entries: Iterable[dict]) -> Counter:
     """Count record kinds that are neither parsed nor deliberately ignored."""
     unknown: Counter = Counter()
     for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        etype = entry.get("type")
-        payload = entry.get("payload")
-        subtype = payload.get("type") if isinstance(payload, dict) else None
-        if etype == "session_meta":
-            continue
-        if etype == "event_msg":
-            if subtype == "item_completed":
-                item = payload.get("item")
-                kind = item.get("type") if isinstance(item, dict) else None
-                if kind not in _HANDLED_ITEM_COMPLETED and kind not in _IGNORED_ITEM_COMPLETED:
-                    unknown[f"item_completed/{kind}"] += 1
-            elif subtype not in _HANDLED_EVENT_MSG and subtype not in _IGNORED_EVENT_MSG:
-                unknown[f"event_msg/{subtype}"] += 1
-        elif etype == "response_item":
-            if subtype not in _HANDLED_RESPONSE_ITEM and subtype not in _IGNORED_RESPONSE_ITEM:
-                unknown[f"response_item/{subtype}"] += 1
-        elif etype not in _HANDLED_TOP_LEVEL and etype not in _IGNORED_TOP_LEVEL:
-            unknown[str(etype)] += 1
+        kind = unrecognized_kind(entry)
+        if kind is not None:
+            unknown[kind] += 1
     return unknown
 
 
@@ -365,8 +396,8 @@ def _goal_event(goal: dict, ts: str, turn_seq: int) -> dict:
         "ts": ts,
         "objective": _as_text(goal.get("objective")),
         "status": _as_text(goal.get("status")),
-        "tokens_used": tokens if isinstance(tokens, int) else None,
-        "time_used_seconds": seconds if isinstance(seconds, (int, float)) else None,
+        "tokens_used": _count(tokens),
+        "time_used_seconds": seconds if _finite_number(seconds) and seconds >= 0 else None,
         "_source": "event_msg",
         "_turn_seq": turn_seq,
     }
@@ -435,9 +466,9 @@ def _review_finished_event(output: Any, ts: str, turn_seq: int) -> dict:
         if isinstance(location, dict):
             where = _as_text(location.get("absolute_file_path"))
             lines = location.get("line_range")
-            if where and isinstance(lines, dict) and isinstance(lines.get("start"), int):
-                start, end = lines["start"], lines.get("end")
-                where += f":{start}" + (f"-{end}" if isinstance(end, int) and end != start else "")
+            start, end = (_count(lines.get("start")), _count(lines.get("end"))) if isinstance(lines, dict) else (None, None)
+            if where and start is not None:
+                where += f":{start}" + (f"-{end}" if end is not None and end != start else "")
         findings.append(
             {
                 "title": _as_text(finding.get("title")),
@@ -758,7 +789,7 @@ def _handle_exec_end(payload: dict[str, Any], events: list[dict]) -> None:
     duration = payload.get("duration")
     if isinstance(duration, dict):
         secs, nanos = duration.get("secs"), duration.get("nanos")
-        if isinstance(secs, (int, float)) and isinstance(nanos, (int, float)):
+        if _finite_number(secs) and _finite_number(nanos):
             status["duration"] = secs + nanos / 1e9
     events.append(status)
 
