@@ -39,6 +39,13 @@ function applyFilters(search) {
   });
 }
 
+const narrowScreen = window.matchMedia('(max-width: 900px)');
+
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
+
 // Smooth scroll to target on sidebar click
 document.querySelectorAll('.tree-node').forEach(node => {
   node.addEventListener('click', function(e) {
@@ -47,6 +54,8 @@ document.querySelectorAll('.tree-node').forEach(node => {
     if (id) {
       const el = document.getElementById(id);
       if (el) {
+        // On a phone the drawer covers the transcript, so get it out of the way first.
+        if (narrowScreen.matches) closeSidebar();
         const folded = el.tagName === 'DETAILS' ? el : el.closest('details');
         if (folded) folded.open = true;
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
