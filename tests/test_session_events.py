@@ -64,9 +64,13 @@ class ReasoningSnapshotTests(unittest.TestCase):
         )
         self.assertEqual(texts, ["A", "B", "C"])
 
-    def test_new_summary_that_does_not_repeat_is_kept_whole(self) -> None:
+    def test_heading_restated_out_of_order_shows_once(self) -> None:
         texts = self._reasoning_texts(_turn(), _reasoning("A", "B"), _reasoning("B", "C"))
-        self.assertEqual(texts, ["A", "B", "B", "C"])
+        self.assertEqual(texts, ["A", "B", "C"])
+
+    def test_repeat_within_one_item_is_kept(self) -> None:
+        texts = self._reasoning_texts(_turn(), _reasoning("A", "A"), _reasoning("A", "B"))
+        self.assertEqual(texts, ["A", "A", "B"])
 
     def test_snapshots_do_not_carry_across_turns(self) -> None:
         texts = self._reasoning_texts(_turn(), _reasoning("A"), _turn(), _reasoning("A", "B"))

@@ -133,7 +133,7 @@ def raw_texts_by_turn(entries: list) -> dict[int, dict[str, list[str]]]:
     marks with "Turn started".
     """
     turns: dict[int, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
-    snapshots: dict[int, list[str]] = {}
+    reasoning_seen: dict[int, set[str]] = defaultdict(set)
     turn = 0
     for entry in entries:
         if not isinstance(entry, dict):
@@ -164,23 +164,20 @@ def raw_texts_by_turn(entries: list) -> dict[int, dict[str, list[str]]]:
             if kind == "message" and payload.get("role") == "assistant":
                 phase = payload.get("phase") or "no_phase"
                 content = payload.get("content") if isinstance(payload.get("content"), list) else []
-                for block in content:
-                    if isinstance(block, dict) and block.get("type") == "output_text":
-                        texts[f"assistant.response.{phase}"].append(normalize(block.get("text")))
+                # A message's text blocks are one entry, the way its event copies carry them.
+                blocks = [block.get("text") for block in content
+                          if isinstance(block, dict) and block.get("type") == "output_text"
+                          and isinstance(block.get("text"), str)]
+                if blocks:
+                    texts[f"assistant.response.{phase}"].append(normalize("\n\n".join(blocks)))
             elif kind == "reasoning":
                 summary = payload.get("summary") if isinstance(payload.get("summary"), list) else []
                 parts = [normalize(block.get("text")) for block in summary
                          if isinstance(block, dict) and block.get("type") == "summary_text"]
-                # Newer models restate the turn's summary so far before adding
-                # to it; only the parts after that restatement are new.
-                before = snapshots.get(turn) or []
-                if parts:
-                    if before and parts[: len(before)] == before:
-                        parts_new = parts[len(before):]
-                    else:
-                        parts_new = parts
-                    snapshots[turn] = parts
-                    texts["reasoning.response"].extend(parts_new)
+                # Each heading shows once per turn, where it first appeared:
+                # newer models restate the turn's summary so far in every item.
+                texts["reasoning.response"].extend(p for p in parts if p not in reasoning_seen[turn])
+                reasoning_seen[turn].update(parts)
     return {
         turn: {kind: [t for t in values if t] for kind, values in kinds.items()}
         for turn, kinds in turns.items()
