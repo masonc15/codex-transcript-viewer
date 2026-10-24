@@ -488,12 +488,31 @@ def _review_finished_event(output: Any, ts: str, turn_seq: int) -> dict:
     }
 
 
+# Finding titles start with a priority tag the reply may leave out: "[P1] Popup closes".
+_FINDING_PRIORITY_RE = re.compile(r"^\[P\d\]\s*")
+
+
+def _review_repeated_in(review: dict, reply: str) -> bool:
+    """True when the reply carries every finding title, or the explanation."""
+    reply = _normalize_text(reply).lower()
+    titles = [
+        _FINDING_PRIORITY_RE.sub("", _normalize_text(f.get("title"))).lower()
+        for f in review.get("findings") or []
+    ]
+    titles = [title for title in titles if title]
+    if titles:
+        return all(title in reply for title in titles)
+    explanation = _normalize_text(review.get("explanation")).lower()
+    return bool(explanation) and explanation in reply
+
+
 def _mark_reviews_repeated_by_reply(events: list[dict]) -> list[dict]:
-    """Flag reviews whose findings an assistant message right after them repeats.
+    """Flag reviews whose findings the assistant message right after them repeats.
 
     Codex usually writes the review as an assistant message too; the earliest
     review versions went straight back to the model, so the findings are only
-    in the review record.
+    in the review record. A reply only counts if it carries the findings: one
+    that just says it will fix them does not.
     """
     for idx, event in enumerate(events):
         if event.get("type") != "review_finished":
@@ -502,7 +521,8 @@ def _mark_reviews_repeated_by_reply(events: list[dict]) -> list[dict]:
             if later.get("type") in ("user_message", "task_started"):
                 break
             if later.get("type") in ("assistant_text", "agent_commentary"):
-                event["repeated_by_reply"] = True
+                if _review_repeated_in(event, later.get("text", "")):
+                    event["repeated_by_reply"] = True
                 break
     return events
 

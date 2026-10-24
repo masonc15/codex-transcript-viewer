@@ -167,9 +167,20 @@ class ReviewTests(unittest.TestCase):
             _response_item({"type": "message", "role": "assistant",
                             "content": [{"type": "output_text", "text": "Review: popup closes."}]}),
         )
-        self.assertIn("The full review is in the reply below.", html)
-        self.assertNotIn("Chrome focuses new windows.", html)
-        self.assertNotIn("One blocker.", html)
+        # Folded away, but still there.
+        self.assertIn('<details class="review-repeated"><summary>The reply below repeats', html)
+        self.assertIn("Chrome focuses new windows.", html)
+        self.assertIn("One blocker.", html)
+
+    def test_reply_that_only_acknowledges_does_not_hide_findings(self) -> None:
+        html = _html(
+            _turn(),
+            _event_msg({"type": "exited_review_mode", "review_output": self.OUTPUT}),
+            _response_item({"type": "message", "role": "assistant",
+                            "content": [{"type": "output_text", "text": "I will fix that."}]}),
+        )
+        self.assertNotIn("review-repeated", html.split("<style>")[0] + html.split("</style>")[1])
+        self.assertIn("Chrome focuses new windows.", html)
 
 
 class HookAndErrorTests(unittest.TestCase):

@@ -727,11 +727,9 @@ def _render_review_finished(evt, ts, anchor, sidebar, messages, ctx):
     count = f"{len(findings)} finding" + ("" if len(findings) == 1 else "s")
     verdict = evt.get("verdict") or "no verdict"
     body = ""
-    if evt.get("repeated_by_reply"):
-        body = '<div class="event-detail">The full review is in the reply below.</div>'
-    elif evt.get("explanation"):
+    if evt.get("explanation"):
         body += f'<div class="markdown-content">{render_markdown(evt["explanation"])}</div>'
-    if findings and not evt.get("repeated_by_reply"):
+    if findings:
         items = []
         for finding in findings:
             where = (
@@ -743,6 +741,12 @@ def _render_review_finished(evt, ts, anchor, sidebar, messages, ctx):
                 f'{where}<div class="markdown-content">{render_markdown(finding.get("body", ""))}</div></li>'
             )
         body += f'<ol class="review-findings">{"".join(items)}</ol>'
+    if body and evt.get("repeated_by_reply"):
+        # The reply repeats it, so fold it away instead of showing it twice.
+        body = (
+            '<details class="review-repeated"><summary>The reply below repeats this review; '
+            f"show it here</summary>{body}</details>"
+        )
     _event_row(anchor, ts, sidebar, messages, role="event", kind="review",
                label=f"\U0001f50d Review done: {verdict}, {count}", body=body)
 
