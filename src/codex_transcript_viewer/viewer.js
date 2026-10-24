@@ -68,5 +68,41 @@ document.querySelectorAll('.tree-node').forEach(node => {
   });
 });
 
+function setExpanded(output, expanded) {
+  output.classList.toggle('expanded', expanded);
+  const button = output.querySelector('.output-toggle');
+  button.setAttribute('aria-expanded', String(expanded));
+  button.textContent = expanded ? button.dataset.less : button.dataset.more;
+}
+
+function toggleImage(img) {
+  img.setAttribute('aria-pressed', String(img.classList.toggle('full')));
+}
+
+document.getElementById('messages').addEventListener('click', e => {
+  const button = e.target.closest('.output-toggle');
+  if (button) {
+    const output = button.closest('.tool-output');
+    setExpanded(output, !output.classList.contains('expanded'));
+    return;
+  }
+  // Clicking a long output's preview expands it, unless the click ended a text selection.
+  const preview = e.target.closest('.output-preview');
+  if (preview && !String(window.getSelection())) {
+    setExpanded(preview.closest('.tool-output'), true);
+    return;
+  }
+  const img = e.target.closest('.attachment-image img');
+  if (img) toggleImage(img);
+});
+
+document.getElementById('messages').addEventListener('keydown', e => {
+  const img = e.target.closest?.('.attachment-image img');
+  if (img && (e.key === 'Enter' || e.key === ' ')) {
+    e.preventDefault();
+    toggleImage(img);
+  }
+});
+
 // Apply default filter on load
 applyFilters();

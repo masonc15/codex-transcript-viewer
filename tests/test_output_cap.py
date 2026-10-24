@@ -44,7 +44,24 @@ class OutputShownOnceTests(unittest.TestCase):
         self.assertIn('class="tool-output expandable"', html)
         self.assertIn("output-preview", html)
         self.assertIn("output-full", html)
-        self.assertIn("[click to expand 5000 chars]", html)
+        self.assertIn("Show all 5,000 chars</button>", html)
+
+
+class ExpandToggleTests(unittest.TestCase):
+    def test_cap_below_preview_length_needs_no_toggle(self) -> None:
+        html = _html("z" * 5000, max_output_chars=500)
+        self.assertNotIn('class="output-toggle"', html)
+        self.assertIn("[4,500 characters omitted]", html)
+
+    def test_toggle_counts_what_it_shows(self) -> None:
+        html = _html("z" * 5000, max_output_chars=3000)
+        self.assertIn("Show all 3,000 chars</button>", html)
+
+    def test_toggle_is_a_button_not_a_click_handler(self) -> None:
+        html = _html("line\n" * 1000)
+        body = html.split("<body>")[1].split("<script>")[0]
+        self.assertIn('<button type="button" class="output-toggle" aria-expanded="false"', body)
+        self.assertNotIn("toggle('expanded')", body)
 
 
 if __name__ == "__main__":

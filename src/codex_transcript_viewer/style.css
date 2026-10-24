@@ -273,6 +273,8 @@ body {
   cursor: zoom-out;
 }
 
+.attachment-image img:focus-visible { outline: 2px solid var(--accent); }
+
 .attachment-image figcaption,
 .attachment-note {
   font-size: 10px;
@@ -409,13 +411,24 @@ body {
   word-wrap: break-word;
 }
 
-.tool-output.expandable { cursor: pointer; }
-.tool-output.expandable:hover { opacity: 0.9; }
 .tool-output.expandable .output-full { display: none; }
 .tool-output.expandable.expanded .output-preview { display: none; }
 .tool-output.expandable.expanded .output-full { display: block; }
+.tool-output.expandable .output-preview { cursor: pointer; }
 
-.expand-hint { color: var(--warning); font-style: italic; }
+.output-toggle {
+  margin-top: 4px;
+  padding: 0;
+  font: inherit;
+  font-style: italic;
+  color: var(--warning);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.output-toggle:hover, .output-toggle:focus-visible { text-decoration: underline; }
+
+.review-repeated summary { cursor: pointer; color: var(--muted); }
 
 /* System events */
 .system-event {

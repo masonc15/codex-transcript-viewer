@@ -41,5 +41,17 @@ class ImageBudgetTests(unittest.TestCase):
         self.assertNotIn("<img", html)
 
 
+class ImageNoticeTests(unittest.TestCase):
+    def test_fractional_budget_is_stated(self) -> None:
+        events = [_output(f"c{i}", _png(400_000)) for i in range(3)]
+        html = build_html({"id": "s"}, events, max_image_mb=0.5)
+        self.assertIn("under 0.5 MB of images", html)
+
+    def test_images_are_keyboard_toggles(self) -> None:
+        html = build_html({"id": "s"}, [_output("c", _png(10))])
+        self.assertIn('tabindex="0" role="button" aria-pressed="false"', html)
+        self.assertNotIn("this.classList.toggle('full')", html)
+
+
 if __name__ == "__main__":
     unittest.main()

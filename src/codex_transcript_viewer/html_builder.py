@@ -204,9 +204,10 @@ def _image_notice_html(ctx: RenderContext) -> str:
     noun = "tool image" if count == 1 else "tool images"
     size = _format_bytes(ctx.images_omitted_bytes) if ctx.images_omitted_bytes else ""
     detail = f" ({size})" if size else ""
+    budget = f"{ctx.image_budget / 1_000_000:g} MB"
     return (
         f'<div class="image-notice">{count} {noun}{detail} not embedded to keep this page '
-        f"under {ctx.image_budget // 1_000_000} MB of images; rerun with "
+        f"under {budget} of images; rerun with "
         "<code>--max-image-mb 0</code> to include them.</div>"
     )
 
@@ -221,6 +222,8 @@ def _inherited_run_length(events: list[dict], start: int) -> int:
 # ---------------------------------------------------------------------------
 # Per-event-type rendering functions
 # ---------------------------------------------------------------------------
+
+_PREVIEW_CHARS = 2000
 
 _DATA_URL_RE = re.compile(r"^data:image/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+$")
 
@@ -269,7 +272,7 @@ def _render_image(
         return (
             '<figure class="attachment-image">'
             f'<img src="{url}" alt="{escape(label)}" loading="lazy" decoding="async" '
-            "onclick=\"this.classList.toggle('full')\">"
+            'tabindex="0" role="button" aria-pressed="false" title="Click to enlarge">'
             f"<figcaption>{escape(label)}</figcaption></figure>"
         )
     detail = f", {_format_bytes(size)}" if isinstance(size, int) and size > 0 else ""
@@ -540,8 +543,8 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages, ctx):
         shown = output[:cap]
     else:
         shown = output
-    truncated = len(output) > 2000
-    preview = shown[:2000]
+    truncated = len(shown) > _PREVIEW_CHARS
+    preview = shown[:_PREVIEW_CHARS]
 
     attachments = evt.get("attachments") or []
     size_label = f"{len(output)} chars"
@@ -558,12 +561,16 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages, ctx):
     )
 
     if truncated:
-        # A long output shows its first 2,000 characters until clicked.
+        # A long output shows its first characters until expanded. The toggle
+        # is a real button, so it works from the keyboard and never fires when
+        # text is selected inside the output.
         body = (
-            '<div class="tool-output expandable" onclick="this.classList.toggle(\'expanded\')">'
-            f'<div class="output-preview"><pre>{escape(preview)}\n'
-            f'<span class="expand-hint">[click to expand {len(output)} chars]</span></pre></div>'
-            f'<div class="output-full"><pre>{escape(shown)}{escape(omitted)}</pre></div></div>'
+            '<div class="tool-output expandable">'
+            f'<div class="output-preview"><pre>{escape(preview)}</pre></div>'
+            f'<div class="output-full"><pre>{escape(shown)}{escape(omitted)}</pre></div>'
+            '<button type="button" class="output-toggle" aria-expanded="false" '
+            f'data-more="Show all {len(shown):,} chars" data-less="Collapse">'
+            f"Show all {len(shown):,} chars</button></div>"
         )
     else:
         body = f'<div class="tool-output"><pre>{escape(shown)}{escape(omitted)}</pre></div>'
