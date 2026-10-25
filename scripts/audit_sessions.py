@@ -9,8 +9,8 @@ Usage:
 Options: --jobs N, --no-html, --examples N, --json FILE
 Set AUDIT_SRC to another checkout's src directory to audit that version.
 
-Each session gets four checks. None of them compares against an earlier run of
-the viewer, so a bug present from the start still shows up.
+Each session gets these checks. None of them compares against an earlier run
+of the viewer, so a bug present from the start still shows up.
 
 duplicates  The same text is visible twice in one turn, more often than any
             single raw stream repeats it. A task_complete or agent_message
@@ -22,10 +22,16 @@ overlaps    Two raw record kinds share text in a turn, and no dedup rule in
             OVERLAP_RULES says how the parser handles that pair. This is how an
             assumption like "agent_message never repeats a final answer" gets
             tested against real data.
-errors      The parser or HTML builder raised.
+finals      A turn whose records name its answer (a final_answer message or a
+            task_complete) shows no entry marked as the final answer, so the
+            Answers filter would miss it.
+unrecognized  Record kinds the parser neither reads nor deliberately skips,
+            which usually means Codex changed its format.
+errors      The parser, the HTML builder or the audit itself raised.
 
 The script prints session text snippets to the terminal. Never commit its output.
-Exit status is 1 when any session has a finding.
+Exit status is 1 when any session has a finding or no session was audited, and
+2 when a given path does not exist.
 """
 
 from __future__ import annotations
@@ -56,6 +62,9 @@ def _viewer():
 
 
 # Raw record kinds whose text the viewer can show, and the role they show under.
+# Assistant responses are "assistant.response.<phase>"; a phase Codex adds later
+# still counts as a response.
+RESPONSE_PREFIX = "assistant.response."
 ASSISTANT_RESPONSE_KINDS = (
     "assistant.response.commentary",
     "assistant.response.final_answer",
@@ -66,10 +75,17 @@ KIND_GROUP = {
     "prompt.item": "prompt",
     "assistant.event": "assistant",
     "task_complete": "assistant",
-    **{kind: "assistant" for kind in ASSISTANT_RESPONSE_KINDS},
     "reasoning.event": "reasoning",
     "reasoning.response": "reasoning",
 }
+
+
+def kind_group(kind: str) -> str:
+    return "assistant" if kind.startswith(RESPONSE_PREFIX) else KIND_GROUP[kind]
+
+
+def response_kinds(kinds) -> list[str]:
+    return sorted(k for k in kinds if k.startswith(RESPONSE_PREFIX))
 
 # Pairs of raw kinds known to share text within one role, and the rule that
 # keeps the pair from showing twice. Relations: "equal" is identical normalized
@@ -214,6 +230,30 @@ def _group(label: str) -> str:
     return VISIBLE_GROUP[label.split(".")[0]]
 
 
+def final_turns(events: list[dict]) -> set[int]:
+    """Turns with an entry the viewer marks as the final answer."""
+    turns, turn = set(), 0
+    for event in events:
+        kind = event.get("type")
+        if kind == "task_started":
+            turn += 1
+        elif kind == "task_complete" or event.get("final") or (
+            kind == "assistant_text" and event.get("phase") == "final_answer"
+        ):
+            turns.add(turn)
+    return turns
+
+
+def check_finals(raw, events) -> list[str]:
+    marked = final_turns(events)
+    findings = []
+    for turn, kinds in sorted(raw.items()):
+        named = kinds.get("task_complete") or kinds.get(RESPONSE_PREFIX + "final_answer")
+        if named and turn not in marked:
+            findings.append(f"turn {turn}: answer not marked final {_short(named[-1])!r}")
+    return findings
+
+
 def _max_counts(*streams: list[str]) -> Counter:
     result = Counter()
     for stream in streams:
@@ -232,7 +272,7 @@ def expected_by_turn(raw: dict[int, dict[str, list[str]]]) -> dict[int, dict[str
     """
     expected: dict[int, dict[str, Counter]] = {}
     for turn, kinds in raw.items():
-        responses = [t for k in ASSISTANT_RESPONSE_KINDS for t in kinds.get(k, [])]
+        responses = [t for k in response_kinds(kinds) for t in kinds[k]]
         copies = {event_copy(t) for t in responses} | set(responses)
         finals = kinds.get("assistant.response.final_answer", [])
         events = [t for t in kinds.get("assistant.event", []) if t not in copies]
@@ -242,9 +282,11 @@ def expected_by_turn(raw: dict[int, dict[str, list[str]]]) -> dict[int, dict[str
             if t not in copies and t not in events and not any(f.startswith(t) for f in finals)
         ]
         assistant |= _max_counts(completes)
-        prompts = kinds.get("prompt.item") or kinds.get("prompt.legacy") or []
+        # Every distinct typed prompt shows; a legacy copy of an item prompt is the same prompt.
+        prompts = Counter(kinds.get("prompt.item", []))
+        prompts += Counter(kinds.get("prompt.legacy", [])) - prompts
         expected[turn] = {
-            "prompt": Counter(prompts),
+            "prompt": prompts,
             "assistant": assistant,
             "reasoning": _max_counts(kinds.get("reasoning.event", []),
                                      kinds.get("reasoning.response", [])),
@@ -264,10 +306,10 @@ def check_duplicates(raw, visible) -> list[str]:
         allowed: dict[str, Counter] = defaultdict(Counter)
         # All assistant response phases are one stream: the model's output.
         allowed["assistant"] = _max_counts(
-            [t for k in ASSISTANT_RESPONSE_KINDS for t in streams.get(k, [])])
+            [t for k in response_kinds(streams) for t in streams[k]])
         for kind, texts in streams.items():
-            if kind not in ASSISTANT_RESPONSE_KINDS:
-                allowed[KIND_GROUP[kind]] |= _max_counts(texts)
+            if not kind.startswith(RESPONSE_PREFIX):
+                allowed[kind_group(kind)] |= _max_counts(texts)
 
         by_text: dict[tuple[str, str], list[str]] = defaultdict(list)
         for label, text in items:
@@ -335,7 +377,7 @@ def overlaps(raw) -> dict[tuple[str, str, str], list]:
 
 def rule_for(key: tuple[str, str, str]) -> str | None:
     relation, a, b = key
-    if KIND_GROUP[a] != KIND_GROUP[b]:
+    if kind_group(a) != kind_group(b):
         return "different roles: each shows once in its own role"
     return OVERLAP_RULES.get(key)
 
@@ -344,6 +386,8 @@ def session_format(entries: list) -> str:
     prompt = "no prompts"
     phases = False
     for entry in entries:
+        if not isinstance(entry, dict):
+            continue
         payload = _payload(entry)
         kind = payload.get("type")
         if entry.get("type") == "event_msg" and kind == "item_completed":
@@ -365,37 +409,53 @@ def cli_version(entries: list) -> str:
 
 
 def entries_from_lines(lines) -> list:
-    entries = []
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            entries.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    return entries
+    """Records as the CLI reads them, so the audit sees what the viewer sees."""
+    parser, _ = _viewer()
+    return list(parser.parse_lines(lines))
 
 
-def audit_entries(name: str, entries: list, render_html: bool = True) -> dict:
-    report = {
+CHECKS = ("errors", "duplicates", "truth", "finals", "unhandled_overlaps", "unrecognized")
+
+
+def empty_report(name: str) -> dict:
+    return {
         "session": name,
-        "format": session_format(entries),
-        "cli_version": cli_version(entries),
+        "format": "?",
+        "cli_version": "?",
         "duplicates": [],
         "truth": [],
+        "finals": [],
         "totals": {},
         "overlaps": {},
         "unhandled_overlaps": [],
+        "unrecognized": [],
+        "unrecognized_counts": {},
         "errors": [],
     }
+
+
+def audit_entries(name: str, entries: list, render_html: bool = True) -> dict:
+    """Audit one session; any exception becomes an error finding for it."""
+    report = empty_report(name)
+    try:
+        _audit_entries(report, entries, render_html)
+    except Exception:
+        report["errors"].append("audit: " + traceback.format_exc(limit=3).strip())
+    return report
+
+
+def _audit_entries(report: dict, entries: list, render_html: bool) -> None:
+    report["format"] = session_format(entries)
+    report["cli_version"] = cli_version(entries)
     parser, html_builder = _viewer()
-    report["unrecognized"] = dict(parser.unrecognized_record_kinds(entries))
+    counts = parser.unrecognized_record_kinds(entries)
+    report["unrecognized_counts"] = dict(counts)
+    report["unrecognized"] = [f"{kind} x{count}" for kind, count in counts.most_common()]
     try:
         meta, events = parser.extract_conversation(entries)
     except Exception:
         report["errors"].append("parser: " + traceback.format_exc(limit=3).strip())
-        return report
+        return
     if render_html:
         try:
             html_builder.build_html(meta, events)
@@ -406,22 +466,28 @@ def audit_entries(name: str, entries: list, render_html: bool = True) -> dict:
     visible = visible_by_turn(events)
     report["duplicates"] = check_duplicates(raw, visible)
     report["truth"], totals = check_truth(raw, visible)
+    report["finals"] = check_finals(raw, events)
     report["totals"] = dict(totals)
     for key, (turn, text) in overlaps(raw).items():
         label = " ".join(key)
         report["overlaps"][label] = f"turn {turn}: {_short(text)!r}"
         if rule_for(key) is None:
             report["unhandled_overlaps"].append(f"{label} (turn {turn}: {_short(text)!r})")
-    return report
 
 
 def has_findings(report: dict) -> bool:
-    return any(report[k] for k in ("duplicates", "truth", "unhandled_overlaps", "errors"))
+    return any(report.get(k) for k in CHECKS)
 
 
 def _audit_path(path: str, render_html: bool) -> dict:
-    with open(path, encoding="utf-8", errors="replace") as f:
-        return audit_entries(path, entries_from_lines(f), render_html)
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            entries = entries_from_lines(f)
+    except OSError as exc:
+        report = empty_report(path)
+        report["errors"].append(f"read: {exc}")
+        return report
+    return audit_entries(path, entries, render_html)
 
 
 def _audit_bytes(name: str, data: bytes, render_html: bool) -> dict:
@@ -429,15 +495,21 @@ def _audit_bytes(name: str, data: bytes, render_html: bool) -> dict:
     return audit_entries(name, entries_from_lines(lines), render_html)
 
 
-def _session_paths(paths: list[str]) -> list[str]:
-    found = []
+def _session_paths(paths: list[str], required: bool) -> tuple[list[str], list[str]]:
+    """Session files under paths, and the paths that don't exist.
+
+    A missing default location is fine; a path someone typed is not.
+    """
+    found, missing = [], []
     for path in paths:
         p = Path(path).expanduser()
         if p.is_dir():
             found.extend(str(f) for f in sorted(p.rglob("*.jsonl")) if not f.name.startswith("._"))
         elif p.is_file():
             found.append(str(p))
-    return found
+        elif required:
+            missing.append(path)
+    return found, missing
 
 
 def _tar_jobs(source: str):
@@ -449,18 +521,29 @@ def _tar_jobs(source: str):
                 yield member.name, tar.extractfile(member).read()
 
 
-def run(jobs_iter, submit, jobs: int):
+def _result(future, name: str) -> dict:
+    """A worker's report, or an error report if the worker itself failed."""
+    try:
+        return future.result()
+    except Exception as exc:
+        report = empty_report(name)
+        report["errors"].append(f"worker: {type(exc).__name__}: {exc}")
+        return report
+
+
+def run(jobs_iter, submit, jobs: int, name=str):
     """Run submit(job) for each job with at most 2*jobs in flight."""
     with concurrent.futures.ProcessPoolExecutor(max_workers=jobs) as pool:
-        pending = set()
+        pending = {}
         for job in jobs_iter:
-            pending.add(submit(pool, job))
+            pending[submit(pool, job)] = name(job)
             if len(pending) >= jobs * 2:
-                done, pending = concurrent.futures.wait(
+                done, _ = concurrent.futures.wait(
                     pending, return_when=concurrent.futures.FIRST_COMPLETED)
-                yield from (f.result() for f in done)
-        for future in concurrent.futures.as_completed(pending):
-            yield future.result()
+                for future in done:
+                    yield _result(future, pending.pop(future))
+        for future in concurrent.futures.as_completed(list(pending)):
+            yield _result(future, pending.pop(future))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -477,9 +560,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.tar:
         results = run(_tar_jobs(args.tar),
                       lambda pool, job: pool.submit(_audit_bytes, *job, render_html),
-                      args.jobs)
+                      args.jobs, name=lambda job: job[0])
     else:
-        paths = _session_paths(args.paths or ["~/.codex/sessions", "~/.codex/archived_sessions"])
+        paths, missing = _session_paths(
+            args.paths or ["~/.codex/sessions", "~/.codex/archived_sessions"],
+            required=bool(args.paths))
+        if missing:
+            print("error: no such file or directory: " + ", ".join(missing), file=sys.stderr)
+            return 2
         results = run(iter(paths),
                       lambda pool, path: pool.submit(_audit_path, path, render_html),
                       args.jobs)
@@ -492,11 +580,11 @@ def main(argv: list[str] | None = None) -> int:
         reports.append(report)
         formats[report["format"]].append(report["session"])
         overlap_seen.update(report["overlaps"].keys())
-        unrecognized.update(report["unrecognized"])
+        unrecognized.update(report.get("unrecognized_counts", {}))
         if not has_findings(report):
             continue
         print(f"== {report['session']}  ({report['format']}, cli {report['cli_version']})")
-        for check in ("errors", "duplicates", "truth", "unhandled_overlaps"):
+        for check in CHECKS:
             items = report[check]
             if not items:
                 continue
@@ -506,7 +594,7 @@ def main(argv: list[str] | None = None) -> int:
 
     flagged = [r for r in reports if has_findings(r)]
     print(f"\n{len(reports)} sessions audited, {len(flagged)} with findings")
-    for check in ("errors", "duplicates", "truth", "unhandled_overlaps"):
+    for check in CHECKS:
         sessions = sum(1 for r in reports if r[check])
         items = sum(len(r[check]) for r in reports)
         print(f"  {check:20} {items:6} findings in {sessions} sessions")
@@ -526,6 +614,9 @@ def main(argv: list[str] | None = None) -> int:
             f"{k} x{v}" for k, v in unrecognized.most_common()))
     if args.json:
         args.json.write_text(json.dumps(reports, indent=1))
+    if not reports:
+        print("error: no sessions were audited", file=sys.stderr)
+        return 1
     return 1 if flagged else 0
 
 

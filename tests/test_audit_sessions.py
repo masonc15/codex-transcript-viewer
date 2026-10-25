@@ -133,5 +133,44 @@ class AuditEntriesTests(unittest.TestCase):
         self.assertTrue(audit.has_findings(report))
 
 
+class AuditRobustnessTests(unittest.TestCase):
+    def test_odd_records_and_new_phases_become_findings_not_crashes(self) -> None:
+        report = audit.audit_entries("s", [None, 3, *_session(_assistant("x", "analysis"))])
+        self.assertEqual(report["errors"], [], report)
+
+    def test_audit_crash_is_contained(self) -> None:
+        with mock.patch.object(audit, "check_truth", side_effect=KeyError("phase")):
+            report = audit.audit_entries("s", _session())
+        self.assertIn("KeyError", report["errors"][0])
+
+    def test_unrecognized_kinds_are_findings(self) -> None:
+        report = audit.audit_entries("s", _session(_event_msg({"type": "brand_new_kind"})))
+        self.assertEqual(report["unrecognized"], ["event_msg/brand_new_kind x1"])
+        self.assertTrue(audit.has_findings(report))
+
+    def test_unmarked_answer_is_a_finals_finding(self) -> None:
+        raw = audit.raw_texts_by_turn(_session(_assistant("Done.", "final_answer")))
+        events = [{"type": "task_started"}, {"type": "assistant_text", "text": "Done.", "phase": ""}]
+        self.assertEqual(audit.check_finals(raw, events), ["turn 1: answer not marked final 'Done.'"])
+
+    def test_legacy_answer_is_marked(self) -> None:
+        report = audit.audit_entries("s", _session(
+            _assistant("Answer.", ""),
+            _event_msg({"type": "task_complete", "last_agent_message": "Answer."}),
+        ))
+        self.assertEqual(report["finals"], [])
+        self.assertFalse(audit.has_findings(report), report)
+
+    def test_missing_path_fails(self) -> None:
+        with mock.patch("sys.stderr"):
+            self.assertEqual(audit.main(["/nonexistent/sessions"]), 2)
+
+    def test_no_sessions_fails(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch("sys.stdout"), mock.patch("sys.stderr"):
+            self.assertEqual(audit.main([tmp, "--jobs", "1"]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
