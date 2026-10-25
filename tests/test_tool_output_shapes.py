@@ -93,10 +93,22 @@ class EnvelopeFieldTests(unittest.TestCase):
         self.assertIn('"important": "kept"', result["output"])
         self.assertIn('"items"', result["output"])
 
-    def test_codex_envelope_shows_only_the_output(self) -> None:
-        raw = json.dumps({"chunk_id": "a", "exit_code": 0, "output": "hit", "wall_time_seconds": 0.1,
-                          "metadata": {"exit_code": 0}})
-        self.assertEqual(normalize_tool_output(raw)["output"], "hit")
+    def test_codex_envelopes_show_only_the_output(self) -> None:
+        for envelope in (
+            {"chunk_id": "a", "exit_code": 0, "output": "hit", "wall_time_seconds": 0.1,
+             "original_token_count": 6},
+            {"output": "hit", "metadata": {"exit_code": 0, "duration_seconds": 1.0}},
+            {"chunk_id": "b", "original_token_count": 3, "output": "hit", "session_id": 7,
+             "wall_time_seconds": 10.0},
+        ):
+            with self.subTest(envelope=envelope):
+                self.assertEqual(normalize_tool_output(json.dumps(envelope))["output"], "hit")
+
+    def test_fields_an_exec_script_returned_are_shown(self) -> None:
+        for raw in ('{"output": "hit", "name": "amazon"}',
+                    '{"exit_code": 0, "name": "amazon", "output": "hit"}'):
+            with self.subTest(raw=raw):
+                self.assertIn('"name": "amazon"', normalize_tool_output(raw)["output"])
 
 
 if __name__ == "__main__":

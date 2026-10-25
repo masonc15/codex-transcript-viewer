@@ -729,9 +729,14 @@ def _exit_code(value: Any) -> int | None:
 
 
 _TRUNCATION_NOTICE = "Warning: truncated output"
-# Keys of the JSON wrappers Codex puts around shell and apply_patch output.
-# Anything else in an object with an "output" key is shown, not dropped.
-_ENVELOPE_KEYS = {"output", "metadata", "exit_code", "chunk_id", "wall_time_seconds"}
+# Keys of the JSON wrappers Codex puts around shell, unified exec and
+# apply_patch output (session_id marks a command still running). Anything else
+# in an object with an "output" key came from the tool or the model's own exec
+# script, and is shown.
+_ENVELOPE_KEYS = {
+    "output", "metadata", "exit_code", "chunk_id", "wall_time_seconds",
+    "original_token_count", "session_id",
+}
 
 
 def normalize_tool_output(value: Any) -> dict:
