@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
 A full review of 0.5.0, mine plus an independent one, turned up 28 problems. This fixes all of them.
 
