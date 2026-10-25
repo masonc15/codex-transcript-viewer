@@ -12,8 +12,8 @@ For each session this writes <name>-sidebar-N.png tiles covering the first
 --rows sidebar entries, and prints any turn where two message entries carry the
 same text in the rendered page, plus any tool output that shows two visible
 copies of its text. A repeat between two kinds of entry in the
-same role (commentary and a final answer, say) is how an event_msg copy
-slipping past dedup looks, and fails the run. Other repeats are listed for the
+same role (commentary and a final answer, say) where one is an event_msg copy
+is how a copy slipping past dedup looks, and fails the run. Other repeats are listed for the
 reviewer: within one kind it is usually the model repeating itself, and across
 roles a prompt quoting a reply. audit_sessions.py checks both against the raw
 records. Look at the tiles too: a repeated line in the sidebar is the
@@ -34,10 +34,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from codex_transcript_viewer.html_builder import build_html  # noqa: E402
 from codex_transcript_viewer.parser import extract_conversation, parse_jsonl  # noqa: E402
 
-# Runs in the page. Splits the sidebar into turns at each "Turn started" row and
-# compares the full rendered text of message entries, not the 60-character
-# previews. A long entry that starts another one (40+ characters) also counts,
-# since that is how a copy with a dropped trailing block looks.
+# Runs in the page. Splits the sidebar into turns at each turn-start row (found
+# by its data-kind, never by text a message could contain) and compares the
+# full rendered text of message entries, not the 60-character previews. A long
+# entry that starts another one (40+ characters) also counts, since that is how
+# a copy with a dropped trailing block looks. A repeat only fails when one side
+# is an event copy (data-source="event"): two response messages with the same
+# text are the model writing it twice, which the page should show.
 FIND_REPEATS = """
 ([maxRows, filter]) => {
   setFilter(filter, document.querySelector(`[data-filter="${filter}"]`));
@@ -46,8 +49,7 @@ FIND_REPEATS = """
   let turn = 0, seen = new Map();
   const nodes = [...document.querySelectorAll('.tree-container .tree-node')];
   for (const node of nodes) {
-    const label = node.textContent;
-    if (label.includes('Turn started')) { turn += 1; seen = new Map(); continue; }
+    if (node.dataset.kind === 'turn') { turn += 1; seen = new Map(); continue; }
     const role = [...node.classList].find(c => c.startsWith('tree-role-'));
     if (!['tree-role-user', 'tree-role-assistant', 'tree-role-thinking'].includes(role)) continue;
     const kind = role.replace('tree-role-', '') + ':' + (node.dataset.kind || node.querySelector('.tree-content').textContent.trim().slice(0, 2));
@@ -56,16 +58,18 @@ FIND_REPEATS = """
     const body = target.querySelector('.markdown-content, .thinking-text') || target;
     const text = norm(body.innerText || '');
     if (!text) continue;
-    for (const [other, otherKind] of seen) {
+    const source = node.dataset.source || '';
+    for (const [other, [otherKind, otherSource]] of seen) {
       const [shorter, longer] = other.length <= text.length ? [other, text] : [text, other];
       if (shorter === longer || (shorter.length >= 40 && longer.startsWith(shorter))) {
         const sameRole = otherKind.split(':')[0] === kind.split(':')[0];
-        repeats.push({turn, kinds: [otherKind, kind], cross: sameRole && otherKind !== kind,
-                      text: text.slice(0, 80)});
+        const copy = source === 'event' || otherSource === 'event';
+        repeats.push({turn, kinds: [otherKind, kind],
+                      cross: sameRole && otherKind !== kind && copy, text: text.slice(0, 80)});
         break;
       }
     }
-    seen.set(text, kind);
+    seen.set(text, [kind, source]);
   }
   // A tool output must show one block of text; two visible copies is a render bug.
   const doubled = [...document.querySelectorAll('.tool-output')].filter(out =>
